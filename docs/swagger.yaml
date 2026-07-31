@@ -1,0 +1,395 @@
+basePath: /
+definitions:
+  handler.AuthRequest:
+    properties:
+      avatar:
+        description: Optional on signup
+        example: "\U0001F464"
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      nickname:
+        description: Required on signup
+        example: my_nickname
+        type: string
+      password:
+        example: secret123
+        minLength: 4
+        type: string
+    required:
+    - email
+    - password
+    type: object
+  handler.AuthResponse:
+    properties:
+      avatar:
+        example: "\U0001F464"
+        type: string
+      created_at:
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      nickname:
+        example: my_nickname
+        type: string
+      role:
+        example: user
+        type: string
+      token:
+        example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        type: string
+      user_id:
+        example: 1
+        type: integer
+    type: object
+  handler.CreateTalkRequestBody:
+    properties:
+      duration:
+        example: 5
+        type: integer
+      instruction:
+        description: Required only for update mode
+        example: make the staff member more helpful
+        type: string
+      language:
+        example: German
+        type: string
+      mode:
+        description: '"new" or "update"'
+        example: new
+        type: string
+      parent_id:
+        description: Required only for update mode
+        example: 1
+        type: integer
+      place:
+        example: Airport Check-in
+        type: string
+      speech_type:
+        example: Siyasetçi Konuşması
+        type: string
+      topic:
+        example: Checking in baggage and asking for a window seat
+        type: string
+    required:
+    - mode
+    type: object
+  handler.ErrorResponse:
+    properties:
+      error:
+        example: invalid request parameters
+        type: string
+    type: object
+  handler.GoogleAuthRequest:
+    properties:
+      google_token:
+        example: google_oauth_token_here
+        type: string
+    required:
+    - google_token
+    type: object
+  handler.TalkRequestResponse:
+    properties:
+      children:
+        items:
+          $ref: '#/definitions/handler.TalkRequestResponse'
+        type: array
+      created_at:
+        type: string
+      duration:
+        type: integer
+      error_message:
+        type: string
+      generated_text:
+        type: string
+      id:
+        type: integer
+      instruction:
+        type: string
+      language:
+        type: string
+      mode:
+        type: string
+      parent_id:
+        type: integer
+      place:
+        type: string
+      speech_type:
+        type: string
+      status:
+        type: string
+      topic:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  model.TalkRequest:
+    properties:
+      created_at:
+        type: string
+      duration:
+        type: integer
+      error_message:
+        type: string
+      generated_text:
+        type: string
+      id:
+        type: integer
+      instruction:
+        type: string
+      language:
+        type: string
+      mode:
+        enum:
+        - new
+        - update
+        type: string
+      parent_id:
+        type: integer
+      place:
+        type: string
+      speech_type:
+        type: string
+      status:
+        enum:
+        - pending
+        - processing
+        - completed
+        - failed
+        type: string
+      topic:
+        type: string
+      updated_at:
+        type: string
+      user_id:
+        type: integer
+    type: object
+info:
+  contact:
+    email: support@talkforge.local
+    name: TalkForge Support
+  description: Production-ready authentication and role verification API for TalkForge.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: TalkForge API
+  version: "1.0"
+paths:
+  /api/v1/auth/google:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates user via Google OAuth (validates token with Google
+        API if Client ID is configured).
+      parameters:
+      - description: Google Auth Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.GoogleAuthRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Google Sign-In
+      tags:
+      - Auth
+  /api/v1/auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Logs in with email/password and returns a JWT token.
+      parameters:
+      - description: Login Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.AuthRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Login user
+      tags:
+      - Auth
+  /api/v1/auth/signup:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new account with email/password.
+      parameters:
+      - description: Register Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.AuthRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handler.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: Register a new user
+      tags:
+      - Auth
+  /api/v1/hello/admin:
+    get:
+      description: Returns a greeting for authenticated administrators only.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Admin Hello
+      tags:
+      - Hello
+  /api/v1/hello/public:
+    get:
+      description: Returns a public greeting without requiring authentication.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Public Hello
+      tags:
+      - Hello
+  /api/v1/hello/user:
+    get:
+      description: Returns a greeting for authenticated users.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: User Hello
+      tags:
+      - Hello
+  /api/v1/talks:
+    get:
+      description: Returns the dialogue generation requests for the authenticated
+        user, nested in a parent-child tree structure representing branches created
+        by updates.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.TalkRequestResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List dialogue requests as a tree
+      tags:
+      - Talks
+    post:
+      consumes:
+      - application/json
+      description: Creates a pending request to generate dialogue text via Gemini.
+        Mode can be "new" or "update".
+      parameters:
+      - description: Create Request Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateTalkRequestBody'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.TalkRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create dialogue generation request
+      tags:
+      - Talks
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
