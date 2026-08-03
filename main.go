@@ -129,6 +129,7 @@ func main() {
 		{
 			talksGroup.POST("", talkHandler.CreateTalkRequest)
 			talksGroup.GET("", talkHandler.ListTalkRequests)
+			talksGroup.DELETE("/:id", talkHandler.DeleteTalkRequest)
 		}
 	}
 

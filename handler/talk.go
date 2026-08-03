@@ -3,6 +3,8 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
 	"time"
 
 	"talkforge-be/model"
@@ -198,6 +200,20 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 		}
 	}
 
+	// Sort root conversations by ID descending (newest first) for consistent, stable ordering
+	sort.Slice(roots, func(i, j int) bool {
+		return roots[i].ID > roots[j].ID
+	})
+
+	// Sort child revisions by ID ascending (chronological order)
+	for _, node := range nodeMap {
+		if len(node.Children) > 1 {
+			sort.Slice(node.Children, func(i, j int) bool {
+				return node.Children[i].ID < node.Children[j].ID
+			})
+		}
+	}
+
 	// If no records, return empty array instead of null
 	if roots == nil {
 		roots = []*TalkRequestResponse{}
@@ -205,3 +221,79 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 
 	c.JSON(http.StatusOK, roots)
 }
+
+// DeleteTalkRequest deletes a talk request by ID along with all its child branches.
+// @Summary Delete dialogue request
+// @Description Deletes a dialogue generation request and any nested descendant updates.
+// @Tags Talks
+// @Security BearerAuth
+// @Produce json
+// @Param id path int true "Talk Request ID"
+// @Success 200 {object} map[string]string
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/v1/talks/{id} [delete]
+func (h *TalkHandler) DeleteTalkRequest(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized context missing"})
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid talk request ID"})
+		return
+	}
+
+	var talk model.TalkRequest
+	if err := model.DB.First(&talk, uint(id)).Error; err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Talk request not found"})
+		return
+	}
+
+	if talk.UserID != userID.(uint) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "You do not have permission to delete this talk request"})
+		return
+	}
+
+	// Fetch all talk requests for this user to collect target ID and all descendant IDs recursively
+	var allUserTalks []model.TalkRequest
+	if err := model.DB.Where("user_id = ?", userID.(uint)).Find(&allUserTalks).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query talk requests: " + err.Error()})
+		return
+	}
+
+	idsToDelete := collectDescendantIDs(uint(id), allUserTalks)
+
+	if err := model.DB.Where("id IN ?", idsToDelete).Delete(&model.TalkRequest{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete talk request: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Talk request deleted successfully"})
+}
+
+func collectDescendantIDs(targetID uint, allTalks []model.TalkRequest) []uint {
+	toDelete := map[uint]bool{targetID: true}
+
+	added := true
+	for added {
+		added = false
+		for _, t := range allTalks {
+			if t.ParentID != nil && toDelete[*t.ParentID] && !toDelete[t.ID] {
+				toDelete[t.ID] = true
+				added = true
+			}
+		}
+	}
+
+	var result []uint
+	for id := range toDelete {
+		result = append(result, id)
+	}
+	return result
+}
+
