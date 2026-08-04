@@ -28,6 +28,7 @@ type AuthRequest struct {
 	Password string `json:"password" binding:"required,min=4" example:"secret123"`
 	Nickname string `json:"nickname" example:"my_nickname"` // Required on signup
 	Avatar   string `json:"avatar" example:"👤"`          // Optional on signup
+	Language string `json:"language" example:"tr"`        // Optional on signup
 }
 
 // AuthResponse returns authorization payload including a JWT token.
@@ -37,6 +38,7 @@ type AuthResponse struct {
 	Nickname  string `json:"nickname" example:"my_nickname"`
 	Avatar    string `json:"avatar" example:"👤"`
 	Role      string `json:"role" example:"user"`
+	Language  string `json:"language" example:"tr"`
 	UserID    uint   `json:"user_id" example:"1"`
 	CreatedAt string `json:"created_at"`
 }
@@ -95,12 +97,18 @@ func (h *AuthHandler) Signup(c *gin.Context) {
 		avatar = "👤"
 	}
 
+	lang := req.Language
+	if lang == "" {
+		lang = "tr"
+	}
+
 	newUser := model.User{
 		Email:        req.Email,
 		Nickname:     req.Nickname,
 		Avatar:       avatar,
 		PasswordHash: string(hashedPassword),
 		Role:         "user", // Signup defaults to regular user
+		Language:     lang,
 	}
 
 	if err := model.DB.Create(&newUser).Error; err != nil {
@@ -121,6 +129,7 @@ func (h *AuthHandler) Signup(c *gin.Context) {
 		Nickname:  newUser.Nickname,
 		Avatar:    newUser.Avatar,
 		Role:      newUser.Role,
+		Language:  newUser.Language,
 		UserID:    newUser.ID,
 		CreatedAt: newUser.CreatedAt.Format(time.RFC3339),
 	})
@@ -174,6 +183,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		Nickname:  user.Nickname,
 		Avatar:    user.Avatar,
 		Role:      user.Role,
+		Language:  user.Language,
 		UserID:    user.ID,
 		CreatedAt: user.CreatedAt.Format(time.RFC3339),
 	})
@@ -283,6 +293,7 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 				Avatar:   avatar,
 				GoogleID: &googleID,
 				Role:     "user",
+				Language: "tr",
 			}
 			if err := model.DB.Create(&user).Error; err != nil {
 				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to create user"})
@@ -303,7 +314,63 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 		Nickname:  user.Nickname,
 		Avatar:    user.Avatar,
 		Role:      user.Role,
+		Language:  user.Language,
 		UserID:    user.ID,
 		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+	})
+}
+
+// UpdateLanguageRequest represents language update payload.
+type UpdateLanguageRequest struct {
+	Language string `json:"language" binding:"required" example:"tr"`
+}
+
+// UpdateLanguage updates the authenticated user's language preference.
+// @Summary Update User Language
+// @Description Updates the preferred language of the authenticated user.
+// @Tags User
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body UpdateLanguageRequest true "Language Update Payload"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/user/language [put]
+func (h *AuthHandler) UpdateLanguage(c *gin.Context) {
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDVal.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid user session"})
+		return
+	}
+
+	var req UpdateLanguageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	var user model.User
+	if err := model.DB.First(&user, userID).Error; err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "User not found"})
+		return
+	}
+
+	user.Language = req.Language
+	if err := model.DB.Model(&user).Update("language", req.Language).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update language"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Language updated successfully",
+		"language": user.Language,
 	})
 }
