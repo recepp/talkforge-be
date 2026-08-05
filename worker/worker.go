@@ -106,11 +106,39 @@ func (w *Worker) executeRequest(ctx context.Context, req *model.TalkRequest) err
 	wordCount := req.Duration * 130 // A standard speaking rate is about 130 words per minute
 
 	if req.Mode == "new" {
-		systemInstruction = "You are an expert speechwriter. Your goal is to write a highly polished, natural, and engaging speech based on the specified speaker role (such as a politician, an imam, or a teacher). Adapt the tone, rhetoric, vocabulary, and structural style to suit the requested role and the delivery location. Output ONLY the raw speech text itself, without any introductory or concluding meta-commentary, notes, or markdown formatting (no backticks or ```)."
+		var talkType model.TalkType
+		var systemPromptBase string
+		roleDescription := req.SpeechType
+
+		// Query database for matching talk type key or title
+		err := model.DB.WithContext(ctx).
+			Where("key = ? OR label_tr = ? OR label_en = ?", req.SpeechType, req.SpeechType, req.SpeechType).
+			First(&talkType).Error
+
+		if err == nil {
+			systemPromptBase = talkType.SystemPrompt
+			if talkType.IsCustom && req.CustomSpeechType != "" {
+				roleDescription = req.CustomSpeechType
+				systemPromptBase += fmt.Sprintf(" The specific speech role/purpose defined by the user is: '%s'.", req.CustomSpeechType)
+			} else if req.CustomSpeechType != "" {
+				roleDescription = req.CustomSpeechType
+				systemPromptBase += fmt.Sprintf(" Additional context: '%s'.", req.CustomSpeechType)
+			} else {
+				roleDescription = talkType.LabelEN
+			}
+		} else {
+			// Fallback system prompt for unlisted/legacy speech types
+			systemPromptBase = "You are an expert speechwriter. Your goal is to write a highly polished, natural, and engaging speech based on the specified speaker role."
+			if req.CustomSpeechType != "" {
+				roleDescription = req.CustomSpeechType
+			}
+		}
+
+		systemInstruction = systemPromptBase + " Output ONLY the raw speech text itself, without any introductory or concluding meta-commentary, notes, or markdown formatting (no backticks or ```)."
 		promptMessage = fmt.Sprintf(
 			"Please write a speech in %s for a speaker acting as a '%s', to be delivered at '%s'. The speech must take approximately %d minutes to read aloud at a standard speaking rate (approx. %d words). The topic and details of the speech are:\n%s",
 			req.Language,
-			req.SpeechType,
+			roleDescription,
 			req.Place,
 			req.Duration,
 			wordCount,
