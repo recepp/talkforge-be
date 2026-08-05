@@ -45,6 +45,7 @@ type TalkRequestResponse struct {
 	SpeechType       string                 `json:"speech_type"`
 	CustomSpeechType string                 `json:"custom_speech_type,omitempty"`
 	Instruction      string                 `json:"instruction,omitempty"`
+	VersionNumber    int                    `json:"version_number"`
 	ParentID         *uint                  `json:"parent_id,omitempty"`
 	GeneratedText    string                 `json:"generated_text,omitempty"`
 	ErrorMessage     string                 `json:"error_message,omitempty"`
@@ -100,6 +101,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.SpeechType = req.SpeechType
 		talkReq.CustomSpeechType = req.CustomSpeechType
 		talkReq.Duration = req.Duration
+		talkReq.VersionNumber = 1 // Root is always version 1
 	} else { // update mode
 		if req.ParentID == nil || req.Instruction == "" {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "update mode requires 'parent_id' and 'instruction'"})
@@ -122,6 +124,31 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "cannot update a dialogue request that has not completed successfully"})
 			return
 		}
+
+		// Find root of this conversation tree (including soft-deleted ancestors)
+		rootID := *req.ParentID
+		current := parent
+		for current.ParentID != nil {
+			var ancestor model.TalkRequest
+			if err := model.DB.Unscoped().First(&ancestor, *current.ParentID).Error; err != nil {
+				break
+			}
+			current = ancestor
+		}
+		rootID = current.ID
+
+		// Find maximum version_number in this tree (including soft-deleted nodes) so version numbers strictly increment even after deletions
+		var maxVersion int
+		model.DB.Unscoped().Raw(`
+			WITH RECURSIVE tree AS (
+				SELECT id, version_number FROM talk_requests WHERE id = ?
+				UNION ALL
+				SELECT tr.id, tr.version_number FROM talk_requests tr
+				INNER JOIN tree ON tr.parent_id = tree.id
+			)
+			SELECT COALESCE(MAX(version_number), 0) FROM tree`, rootID).Scan(&maxVersion)
+
+		talkReq.VersionNumber = maxVersion + 1
 
 		// Inherit details from parent for update request
 		talkReq.Language = parent.Language
@@ -182,6 +209,7 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 			SpeechType:       r.SpeechType,
 			CustomSpeechType: r.CustomSpeechType,
 			Instruction:      r.Instruction,
+			VersionNumber:    r.VersionNumber,
 			ParentID:         r.ParentID,
 			GeneratedText:    r.GeneratedText,
 			ErrorMessage:     r.ErrorMessage,
