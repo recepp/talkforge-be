@@ -90,10 +90,14 @@ func main() {
 	authHandler := handler.NewAuthHandler(cfg)
 	helloHandler := handler.NewHelloHandler()
 	talkHandler := handler.NewTalkHandler()
+	talkTypeHandler := handler.NewTalkTypeHandler()
 
 	// API Routing Group
 	api := r.Group("/api/v1")
 	{
+		// Public Lookup Endpoints
+		api.GET("/talk-types", talkTypeHandler.GetTalkTypes)
+
 		// Public Auth Endpoints
 		authGroup := api.Group("/auth")
 		{

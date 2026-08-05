@@ -34,16 +34,42 @@ type TalkRequest struct {
 	Place         string    `gorm:"type:varchar(255);not null" json:"place"`
 	Topic         string    `gorm:"type:text;not null" json:"topic"`
 	Duration      int       `gorm:"type:integer;default:0;not null" json:"duration"`
-	SpeechType    string    `gorm:"type:varchar(100);default:'';not null" json:"speech_type"`
-	Instruction   string    `gorm:"type:text" json:"instruction,omitempty"`
-	ParentID      *uint     `json:"parent_id,omitempty"`
-	GeneratedText string    `gorm:"type:text" json:"generated_text,omitempty"`
-	ErrorMessage  string    `gorm:"type:text" json:"error_message,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	SpeechType       string    `gorm:"type:varchar(100);default:'';not null" json:"speech_type"`
+	CustomSpeechType string    `gorm:"type:varchar(255);default:'';not null" json:"custom_speech_type,omitempty"`
+	Instruction      string    `gorm:"type:text" json:"instruction,omitempty"`
+	ParentID         *uint     `json:"parent_id,omitempty"`
+	GeneratedText    string    `gorm:"type:text" json:"generated_text,omitempty"`
+	ErrorMessage     string    `gorm:"type:text" json:"error_message,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // TableName overrides the default table name for the TalkRequest model to talk_requests.
 func (TalkRequest) TableName() string {
 	return "talk_requests"
 }
+
+// TalkType represents a dynamic talk type/purpose with multi-language labels and system prompt.
+type TalkType struct {
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	Key          string    `gorm:"type:varchar(50);uniqueIndex;not null" json:"key"`
+	Symbol       string    `gorm:"type:varchar(10);default:''" json:"symbol"`
+	SystemPrompt string    `gorm:"type:text;not null" json:"system_prompt"`
+	IsCustom     bool      `gorm:"default:false" json:"is_custom"`
+	SortOrder    int       `gorm:"default:0" json:"sort_order"`
+	LabelTR      string    `gorm:"type:varchar(100);not null" json:"label_tr"`
+	LabelEN      string    `gorm:"type:varchar(100);not null" json:"label_en"`
+	LabelDE      string    `gorm:"type:varchar(100);not null" json:"label_de"`
+	LabelFR      string    `gorm:"type:varchar(100);default:''" json:"label_fr"`
+	LabelES      string    `gorm:"type:varchar(100);default:''" json:"label_es"`
+	LabelAR      string    `gorm:"type:varchar(100);default:''" json:"label_ar"`
+	LabelRU      string    `gorm:"type:varchar(100);default:''" json:"label_ru"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// TableName overrides default table name for TalkType model to talk_types.
+func (TalkType) TableName() string {
+	return "talk_types"
+}
+
