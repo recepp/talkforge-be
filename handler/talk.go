@@ -21,35 +21,37 @@ func NewTalkHandler() *TalkHandler {
 
 // CreateTalkRequestBody represents the payload to create a new dialogue request.
 type CreateTalkRequestBody struct {
-	Mode        string `json:"mode" binding:"required" example:"new"` // "new" or "update"
-	Language    string `json:"language" example:"German"`
-	Place       string `json:"place" example:"Airport Check-in"`
-	Topic       string `json:"topic" example:"Checking in baggage and asking for a window seat"`
-	Duration    int    `json:"duration" example:"5"`
-	SpeechType  string `json:"speech_type" example:"Siyasetçi Konuşması"`
-	Instruction string `json:"instruction" example:"make the staff member more helpful"` // Required only for update mode
-	ParentID    *uint  `json:"parent_id" example:"1"`                                  // Required only for update mode
+	Mode             string `json:"mode" binding:"required" example:"new"` // "new" or "update"
+	Language         string `json:"language" example:"German"`
+	Place            string `json:"place" example:"Airport Check-in"`
+	Topic            string `json:"topic" example:"Checking in baggage and asking for a window seat"`
+	Duration         int    `json:"duration" example:"5"`
+	SpeechType       string `json:"speech_type" example:"politician"`
+	CustomSpeechType string `json:"custom_speech_type,omitempty" example:"Özel Şirket İçi Sunum"`
+	Instruction      string `json:"instruction" example:"make the staff member more helpful"` // Required only for update mode
+	ParentID         *uint  `json:"parent_id" example:"1"`                                  // Required only for update mode
 }
 
 // TalkRequestResponse represents a dialogue node in the tree response.
 type TalkRequestResponse struct {
-	ID            uint                   `json:"id"`
-	UserID        uint                   `json:"user_id"`
-	Mode          string                 `json:"mode"`
-	Status        string                 `json:"status"`
-	Language      string                 `json:"language"`
-	Place         string                 `json:"place"`
-	Topic         string                 `json:"topic"`
-	Duration      int                    `json:"duration"`
-	SpeechType    string                 `json:"speech_type"`
-	Instruction   string                 `json:"instruction,omitempty"`
-	VersionNumber int                    `json:"version_number"`
-	ParentID      *uint                  `json:"parent_id,omitempty"`
-	GeneratedText string                 `json:"generated_text,omitempty"`
-	ErrorMessage  string                 `json:"error_message,omitempty"`
-	CreatedAt     time.Time              `json:"created_at"`
-	UpdatedAt     time.Time              `json:"updated_at"`
-	Children      []*TalkRequestResponse `json:"children"`
+	ID               uint                   `json:"id"`
+	UserID           uint                   `json:"user_id"`
+	Mode             string                 `json:"mode"`
+	Status           string                 `json:"status"`
+	Language         string                 `json:"language"`
+	Place            string                 `json:"place"`
+	Topic            string                 `json:"topic"`
+	Duration         int                    `json:"duration"`
+	SpeechType       string                 `json:"speech_type"`
+	CustomSpeechType string                 `json:"custom_speech_type,omitempty"`
+	Instruction      string                 `json:"instruction,omitempty"`
+	VersionNumber    int                    `json:"version_number"`
+	ParentID         *uint                  `json:"parent_id,omitempty"`
+	GeneratedText    string                 `json:"generated_text,omitempty"`
+	ErrorMessage     string                 `json:"error_message,omitempty"`
+	CreatedAt        time.Time              `json:"created_at"`
+	UpdatedAt        time.Time              `json:"updated_at"`
+	Children         []*TalkRequestResponse `json:"children"`
 }
 
 // CreateTalkRequest handles creation of a new dialogue text generation request.
@@ -97,6 +99,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.Place = req.Place
 		talkReq.Topic = req.Topic
 		talkReq.SpeechType = req.SpeechType
+		talkReq.CustomSpeechType = req.CustomSpeechType
 		talkReq.Duration = req.Duration
 		talkReq.VersionNumber = 1 // Root is always version 1
 	} else { // update mode
@@ -152,6 +155,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.Place = parent.Place
 		talkReq.Topic = parent.Topic
 		talkReq.SpeechType = parent.SpeechType
+		talkReq.CustomSpeechType = parent.CustomSpeechType
 		talkReq.Duration = parent.Duration
 		talkReq.Instruction = req.Instruction
 		talkReq.ParentID = req.ParentID
@@ -194,23 +198,24 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 
 	for _, r := range reqs {
 		node := &TalkRequestResponse{
-			ID:            r.ID,
-			UserID:        r.UserID,
-			Mode:          r.Mode,
-			Status:        r.Status,
-			Language:      r.Language,
-			Place:         r.Place,
-			Topic:         r.Topic,
-			Duration:      r.Duration,
-			SpeechType:    r.SpeechType,
-			Instruction:   r.Instruction,
-			VersionNumber: r.VersionNumber,
-			ParentID:      r.ParentID,
-			GeneratedText: r.GeneratedText,
-			ErrorMessage:  r.ErrorMessage,
-			CreatedAt:     r.CreatedAt,
-			UpdatedAt:     r.UpdatedAt,
-			Children:      []*TalkRequestResponse{},
+			ID:               r.ID,
+			UserID:           r.UserID,
+			Mode:             r.Mode,
+			Status:           r.Status,
+			Language:         r.Language,
+			Place:            r.Place,
+			Topic:            r.Topic,
+			Duration:         r.Duration,
+			SpeechType:       r.SpeechType,
+			CustomSpeechType: r.CustomSpeechType,
+			Instruction:      r.Instruction,
+			VersionNumber:    r.VersionNumber,
+			ParentID:         r.ParentID,
+			GeneratedText:    r.GeneratedText,
+			ErrorMessage:     r.ErrorMessage,
+			CreatedAt:        r.CreatedAt,
+			UpdatedAt:        r.UpdatedAt,
+			Children:         []*TalkRequestResponse{},
 		}
 		nodeMap[r.ID] = node
 	}
