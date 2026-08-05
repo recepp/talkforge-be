@@ -259,41 +259,18 @@ func (h *TalkHandler) DeleteTalkRequest(c *gin.Context) {
 		return
 	}
 
-	// Fetch all talk requests for this user to collect target ID and all descendant IDs recursively
-	var allUserTalks []model.TalkRequest
-	if err := model.DB.Where("user_id = ?", userID.(uint)).Find(&allUserTalks).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query talk requests: " + err.Error()})
+	// Re-parent any direct child requests to this talk's ParentID
+	if err := model.DB.Model(&model.TalkRequest{}).Where("parent_id = ?", talk.ID).Updates(map[string]interface{}{"parent_id": talk.ParentID}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update child talk requests: " + err.Error()})
 		return
 	}
 
-	idsToDelete := collectDescendantIDs(uint(id), allUserTalks)
-
-	if err := model.DB.Where("id IN ?", idsToDelete).Delete(&model.TalkRequest{}).Error; err != nil {
+	// Delete only the target talk request
+	if err := model.DB.Delete(&talk).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete talk request: " + err.Error()})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Talk request deleted successfully"})
-}
-
-func collectDescendantIDs(targetID uint, allTalks []model.TalkRequest) []uint {
-	toDelete := map[uint]bool{targetID: true}
-
-	added := true
-	for added {
-		added = false
-		for _, t := range allTalks {
-			if t.ParentID != nil && toDelete[*t.ParentID] && !toDelete[t.ID] {
-				toDelete[t.ID] = true
-				added = true
-			}
-		}
-	}
-
-	var result []uint
-	for id := range toDelete {
-		result = append(result, id)
-	}
-	return result
 }
 
