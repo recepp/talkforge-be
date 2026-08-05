@@ -13,6 +13,7 @@ type User struct {
 	PasswordHash string    `gorm:"type:varchar(255)" json:"-"` // Nullable/empty for Google-only users
 	GoogleID     *string   `gorm:"uniqueIndex" json:"google_id,omitempty"`
 	Role         string    `gorm:"type:varchar(20);default:'user';not null" json:"role" enums:"user,admin"`
+	Language     string    `gorm:"type:varchar(10);default:'tr';not null" json:"language"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }

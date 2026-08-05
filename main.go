@@ -131,6 +131,13 @@ func main() {
 			talksGroup.GET("", talkHandler.ListTalkRequests)
 			talksGroup.DELETE("/:id", talkHandler.DeleteTalkRequest)
 		}
+
+		// User Profile & Settings Endpoints (Protected by AuthMiddleware)
+		userGroup := api.Group("/user")
+		userGroup.Use(auth.AuthMiddleware(cfg.JWTSecret))
+		{
+			userGroup.PUT("/language", authHandler.UpdateLanguage)
+		}
 	}
 
 	// Start Server
