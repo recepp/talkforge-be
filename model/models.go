@@ -30,7 +30,7 @@ type TalkRequest struct {
 	ID               uint           `gorm:"primaryKey" json:"id"`
 	UserID           uint           `json:"user_id"`
 	User             User           `gorm:"foreignKey:UserID" json:"-"`
-	Mode             string         `gorm:"type:varchar(20);not null" json:"mode" enums:"new,update"`
+	Mode             string         `gorm:"type:varchar(20);not null" json:"mode" enums:"new,update,partial_update"`
 	Status           string         `gorm:"type:varchar(20);default:'pending';not null" json:"status" enums:"pending,processing,completed,failed"`
 	Language         string         `gorm:"type:varchar(50);not null" json:"language"`
 	Place            string         `gorm:"type:varchar(255);not null" json:"place"`
@@ -39,6 +39,7 @@ type TalkRequest struct {
 	SpeechType       string         `gorm:"type:varchar(100);default:'';not null" json:"speech_type"`
 	CustomSpeechType string         `gorm:"type:varchar(255);default:'';not null" json:"custom_speech_type,omitempty"`
 	Instruction      string         `gorm:"type:text" json:"instruction,omitempty"`
+	SelectedText     string         `gorm:"type:text" json:"selected_text,omitempty"`
 	VersionNumber    int            `gorm:"type:integer;default:1;not null" json:"version_number"`
 	ParentID         *uint          `json:"parent_id,omitempty"`
 	GeneratedText    string         `gorm:"type:text" json:"generated_text,omitempty"`
