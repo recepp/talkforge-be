@@ -166,6 +166,30 @@ func (w *Worker) executeRequest(ctx context.Context, req *model.TalkRequest) err
 			req.Duration,
 			wordCount,
 		)
+	} else if req.Mode == "partial_update" {
+		if req.ParentID == nil {
+			return fmt.Errorf("parent_id is required for partial_update mode")
+		}
+		if req.SelectedText == "" {
+			return fmt.Errorf("selected_text is required for partial_update mode")
+		}
+
+		var parent model.TalkRequest
+		if err := model.DB.First(&parent, *req.ParentID).Error; err != nil {
+			return fmt.Errorf("parent request %d not found in database: %v", *req.ParentID, err)
+		}
+
+		if parent.Status != "completed" {
+			return fmt.Errorf("parent request %d has not completed successfully", *req.ParentID)
+		}
+
+		systemInstruction = "You are an expert speechwriter performing a surgical edit on a specific passage of an existing speech. You will receive the full speech, the exact passage to modify, and an instruction. Your task is to rewrite ONLY that passage according to the instruction, then return the COMPLETE speech with the updated passage seamlessly integrated — all other parts of the speech must remain completely unchanged. Output ONLY the raw, complete speech text without any meta-commentary, notes, or markdown formatting (no backticks or ```)."
+		promptMessage = fmt.Sprintf(
+			"FULL SPEECH:\n%s\n\n---\nPASSAGE TO EDIT (find this exact section in the speech above):\n%s\n\n---\nEDIT INSTRUCTION:\n%s\n\nReturn the complete speech with only that passage rewritten according to the instruction. Keep everything else exactly as is.",
+			parent.GeneratedText,
+			req.SelectedText,
+			req.Instruction,
+		)
 	} else {
 		return fmt.Errorf("unknown mode: %s", req.Mode)
 	}
