@@ -110,3 +110,20 @@ func (RoomMember) TableName() string {
 	return "room_members"
 }
 
+// RoomMessage represents one chat message in a room's discussion thread
+// about a specific talk (the discussion that precedes generating its next version).
+type RoomMessage struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	RoomID        uint      `json:"room_id"`
+	TalkRequestID uint      `json:"talk_request_id"`
+	UserID        uint      `json:"user_id"`
+	User          User      `gorm:"foreignKey:UserID" json:"-"`
+	Text          string    `gorm:"type:text;not null" json:"text"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// TableName overrides the default table name for the RoomMessage model to room_messages.
+func (RoomMessage) TableName() string {
+	return "room_messages"
+}
+

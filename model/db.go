@@ -23,8 +23,8 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 
 	log.Println("Database connection established successfully using DATABASE_URL.")
 
-	// Run auto-migrations for talkforge_users, talk_requests, talk_types, rooms, and room_members
-	err = db.AutoMigrate(&User{}, &TalkRequest{}, &TalkType{}, &Room{}, &RoomMember{})
+	// Run auto-migrations for talkforge_users, talk_requests, talk_types, rooms, room_members, and room_messages
+	err = db.AutoMigrate(&User{}, &TalkRequest{}, &TalkType{}, &Room{}, &RoomMember{}, &RoomMessage{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to run database auto-migrations: %v", err)
 	}

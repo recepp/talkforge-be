@@ -632,6 +632,175 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/talks/{id}/messages": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the discussion thread for a room-shared talk. Requires room membership.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discussion"
+                ],
+                "summary": "List a talk's discussion messages",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Talk Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.RoomMessageResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds a message to a room-shared talk's discussion thread. Requires room membership.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discussion"
+                ],
+                "summary": "Post a discussion message",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Talk Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Message Payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.PostMessageBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.RoomMessage"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/talks/{id}/messages/summarize": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Summarizes the talk's discussion thread and queues a new version using the summary as the update instruction. Requires writer room membership.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Discussion"
+                ],
+                "summary": "Summarize discussion into a new version",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Talk Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.TalkRequest"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/user/language": {
             "put": {
                 "security": [
@@ -873,6 +1042,18 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.PostMessageBody": {
+            "type": "object",
+            "required": [
+                "text"
+            ],
+            "properties": {
+                "text": {
+                    "type": "string",
+                    "example": "Girişi biraz daha resmi yapalım mı?"
+                }
+            }
+        },
         "handler.RoomMemberResponse": {
             "type": "object",
             "properties": {
@@ -883,6 +1064,35 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.RoomMessageResponse": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "room_id": {
+                    "type": "integer"
+                },
+                "talk_request_id": {
+                    "type": "integer"
+                },
+                "text": {
                     "type": "string"
                 },
                 "user_id": {
@@ -1057,6 +1267,29 @@ const docTemplate = `{
                 },
                 "room_id": {
                     "type": "integer"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.RoomMessage": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "room_id": {
+                    "type": "integer"
+                },
+                "talk_request_id": {
+                    "type": "integer"
+                },
+                "text": {
+                    "type": "string"
                 },
                 "user_id": {
                     "type": "integer"

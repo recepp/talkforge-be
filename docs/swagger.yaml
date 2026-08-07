@@ -133,6 +133,14 @@ definitions:
     - email
     - role
     type: object
+  handler.PostMessageBody:
+    properties:
+      text:
+        example: Girişi biraz daha resmi yapalım mı?
+        type: string
+    required:
+    - text
+    type: object
   handler.RoomMemberResponse:
     properties:
       email:
@@ -140,6 +148,25 @@ definitions:
       nickname:
         type: string
       role:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  handler.RoomMessageResponse:
+    properties:
+      avatar:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: integer
+      nickname:
+        type: string
+      room_id:
+        type: integer
+      talk_request_id:
+        type: integer
+      text:
         type: string
       user_id:
         type: integer
@@ -255,6 +282,21 @@ definitions:
         type: string
       room_id:
         type: integer
+      user_id:
+        type: integer
+    type: object
+  model.RoomMessage:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      room_id:
+        type: integer
+      talk_request_id:
+        type: integer
+      text:
+        type: string
       user_id:
         type: integer
     type: object
@@ -717,6 +759,117 @@ paths:
       summary: Delete dialogue request
       tags:
       - Talks
+  /api/v1/talks/{id}/messages:
+    get:
+      description: Returns the discussion thread for a room-shared talk. Requires
+        room membership.
+      parameters:
+      - description: Talk Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.RoomMessageResponse'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List a talk's discussion messages
+      tags:
+      - Discussion
+    post:
+      consumes:
+      - application/json
+      description: Adds a message to a room-shared talk's discussion thread. Requires
+        room membership.
+      parameters:
+      - description: Talk Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Message Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PostMessageBody'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.RoomMessage'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Post a discussion message
+      tags:
+      - Discussion
+  /api/v1/talks/{id}/messages/summarize:
+    post:
+      description: Summarizes the talk's discussion thread and queues a new version
+        using the summary as the update instruction. Requires writer room membership.
+      parameters:
+      - description: Talk Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.TalkRequest'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Summarize discussion into a new version
+      tags:
+      - Discussion
   /api/v1/user/language:
     put:
       consumes:

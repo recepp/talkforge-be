@@ -92,6 +92,7 @@ func main() {
 	talkHandler := handler.NewTalkHandler()
 	talkTypeHandler := handler.NewTalkTypeHandler()
 	roomHandler := handler.NewRoomHandler()
+	discussionHandler := handler.NewDiscussionHandler(cfg)
 
 	// API Routing Group
 	api := r.Group("/api/v1")
@@ -135,6 +136,11 @@ func main() {
 			talksGroup.POST("", talkHandler.CreateTalkRequest)
 			talksGroup.GET("", talkHandler.ListTalkRequests)
 			talksGroup.DELETE("/:id", talkHandler.DeleteTalkRequest)
+
+			// Room discussion thread for a talk (only meaningful for room-shared talks)
+			talksGroup.GET("/:id/messages", discussionHandler.ListMessages)
+			talksGroup.POST("/:id/messages", discussionHandler.PostMessage)
+			talksGroup.POST("/:id/messages/summarize", discussionHandler.SummarizeAndUpdate)
 		}
 
 		// User Profile & Settings Endpoints (Protected by AuthMiddleware)
