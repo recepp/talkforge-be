@@ -190,6 +190,27 @@ func (w *Worker) executeRequest(ctx context.Context, req *model.TalkRequest) err
 			req.SelectedText,
 			req.Instruction,
 		)
+	} else if req.Mode == "translate" {
+		if req.ParentID == nil {
+			return fmt.Errorf("parent_id is required for translate mode")
+		}
+
+		var parent model.TalkRequest
+		if err := model.DB.First(&parent, *req.ParentID).Error; err != nil {
+			return fmt.Errorf("parent request %d not found in database: %v", *req.ParentID, err)
+		}
+
+		if parent.Status != "completed" {
+			return fmt.Errorf("parent request %d has not completed successfully", *req.ParentID)
+		}
+
+		systemInstruction = "You are an expert speech translator. Translate the provided speech into the target language, preserving its meaning, tone, structure, and speaking pace — this is a translation, not a rewrite. Output ONLY the raw translated speech text itself, without any introductory or concluding meta-commentary, notes, or markdown formatting (no backticks or ```)."
+		promptMessage = fmt.Sprintf(
+			"ORIGINAL SPEECH:\n%s\n\nTranslate the speech above into %s. Keep it natural for a native speaker of that language while preserving the original meaning and approximate length (approx. %d words).",
+			parent.GeneratedText,
+			req.Language,
+			wordCount,
+		)
 	} else {
 		return fmt.Errorf("unknown mode: %s", req.Mode)
 	}

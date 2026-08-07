@@ -22,8 +22,8 @@ func NewTalkHandler() *TalkHandler {
 
 // CreateTalkRequestBody represents the payload to create a new dialogue request.
 type CreateTalkRequestBody struct {
-	Mode             string `json:"mode" binding:"required" example:"new"` // "new", "update", or "partial_update"
-	Language         string `json:"language" example:"German"`
+	Mode             string `json:"mode" binding:"required" example:"new"` // "new", "update", "partial_update", "manual_update", or "translate"
+	Language         string `json:"language" example:"German"`             // For "translate" mode, this is the target language
 	Place            string `json:"place" example:"Airport Check-in"`
 	Topic            string `json:"topic" example:"Checking in baggage and asking for a window seat"`
 	Duration         int    `json:"duration" example:"5"`
@@ -85,8 +85,8 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		return
 	}
 
-	if req.Mode != "new" && req.Mode != "update" && req.Mode != "partial_update" && req.Mode != "manual_update" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "mode must be 'new', 'update', 'partial_update', or 'manual_update'"})
+	if req.Mode != "new" && req.Mode != "update" && req.Mode != "partial_update" && req.Mode != "manual_update" && req.Mode != "translate" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "mode must be 'new', 'update', 'partial_update', 'manual_update', or 'translate'"})
 		return
 	}
 
@@ -280,6 +280,64 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.SelectedText = req.SelectedText
 		talkReq.GeneratedText = req.GeneratedText
 		talkReq.Status = "completed"
+		talkReq.ParentID = req.ParentID
+	} else if req.Mode == "translate" {
+		if req.ParentID == nil || req.Language == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "translate mode requires 'parent_id' and a target 'language'"})
+			return
+		}
+
+		// Verify parent request exists and belongs to this user
+		var parent model.TalkRequest
+		if err := model.DB.First(&parent, *req.ParentID).Error; err != nil {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("parent request %d not found", *req.ParentID)})
+			return
+		}
+
+		if parent.UserID != userID.(uint) {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you cannot translate a dialogue belonging to another user"})
+			return
+		}
+
+		if parent.Status != "completed" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "cannot translate a dialogue request that has not completed successfully"})
+			return
+		}
+
+		// Find root of this conversation tree (including soft-deleted ancestors)
+		rootID := *req.ParentID
+		current := parent
+		for current.ParentID != nil {
+			var ancestor model.TalkRequest
+			if err := model.DB.Unscoped().First(&ancestor, *current.ParentID).Error; err != nil {
+				break
+			}
+			current = ancestor
+		}
+		rootID = current.ID
+
+		// Find maximum version_number in this tree (including soft-deleted nodes)
+		var maxVersion int
+		model.DB.Unscoped().Raw(`
+			WITH RECURSIVE tree AS (
+				SELECT id, version_number FROM talk_requests WHERE id = ?
+				UNION ALL
+				SELECT tr.id, tr.version_number FROM talk_requests tr
+				INNER JOIN tree ON tr.parent_id = tree.id
+			)
+			SELECT COALESCE(MAX(version_number), 0) FROM tree`, rootID).Scan(&maxVersion)
+
+		talkReq.VersionNumber = maxVersion + 1
+
+		// Unlike update/partial_update, the language is NOT inherited — it's
+		// the translation target the caller asked for.
+		talkReq.Language = req.Language
+		talkReq.Place = parent.Place
+		talkReq.Topic = parent.Topic
+		talkReq.SpeechType = parent.SpeechType
+		talkReq.CustomSpeechType = parent.CustomSpeechType
+		talkReq.Duration = parent.Duration
+		talkReq.Instruction = fmt.Sprintf("Translated to %s", req.Language)
 		talkReq.ParentID = req.ParentID
 	}
 
