@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"talkforge-be/model"
@@ -49,6 +50,7 @@ type TalkRequestResponse struct {
 	Instruction      string                 `json:"instruction,omitempty"`
 	SelectedText     string                 `json:"selected_text,omitempty"`
 	VersionNumber    int                    `json:"version_number"`
+	VersionLabel     string                 `json:"version_label"`
 	ParentID         *uint                  `json:"parent_id,omitempty"`
 	GeneratedText    string                 `json:"generated_text,omitempty"`
 	ErrorMessage     string                 `json:"error_message,omitempty"`
@@ -368,6 +370,11 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 		}
 	}
 
+	// Recursively assign hierarchical version labels (e.g. 1, 2, 2.1, 2.2, 2.1.1)
+	for _, root := range roots {
+		assignVersionLabels(root, "1")
+	}
+
 	// If no records, return empty array instead of null
 	if roots == nil {
 		roots = []*TalkRequestResponse{}
@@ -376,7 +383,32 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 	c.JSON(http.StatusOK, roots)
 }
 
-// DeleteTalkRequest deletes a talk request by ID along with all its child branches.
+func assignVersionLabels(node *TalkRequestResponse, label string) {
+	node.VersionLabel = label
+
+	if len(node.Children) == 0 {
+		return
+	}
+
+	sort.Slice(node.Children, func(i, j int) bool {
+		return node.Children[i].ID < node.Children[j].ID
+	})
+
+	for i, child := range node.Children {
+		var childLabel string
+		if i == 0 {
+			parts := strings.Split(label, ".")
+			lastVal, _ := strconv.Atoi(parts[len(parts)-1])
+			parts[len(parts)-1] = strconv.Itoa(lastVal + 1)
+			childLabel = strings.Join(parts, ".")
+		} else {
+			childLabel = fmt.Sprintf("%s.%d", label, i)
+		}
+		assignVersionLabels(child, childLabel)
+	}
+}
+
+// DeleteTalkRequest deletes a talk request by ID along with all its child branches and descendants.
 // @Summary Delete dialogue request
 // @Description Deletes a dialogue generation request and any nested descendant updates.
 // @Tags Talks
@@ -413,18 +445,28 @@ func (h *TalkHandler) DeleteTalkRequest(c *gin.Context) {
 		return
 	}
 
-	// Re-parent any direct child requests to this talk's ParentID
-	if err := model.DB.Model(&model.TalkRequest{}).Where("parent_id = ?", talk.ID).Updates(map[string]interface{}{"parent_id": talk.ParentID}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update child talk requests: " + err.Error()})
+	// Recursively collect all descendant IDs of this talk request (including itself)
+	var idsToDelete []uint
+	if err := model.DB.Raw(`
+		WITH RECURSIVE tree AS (
+			SELECT id FROM talk_requests WHERE id = ?
+			UNION ALL
+			SELECT tr.id FROM talk_requests tr
+			INNER JOIN tree ON tr.parent_id = tree.id
+		)
+		SELECT id FROM tree`, talk.ID).Scan(&idsToDelete).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to find descendant talk requests: " + err.Error()})
 		return
 	}
 
-	// Delete only the target talk request
-	if err := model.DB.Delete(&talk).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete talk request: " + err.Error()})
-		return
+	// Delete target talk request and all its child versions
+	if len(idsToDelete) > 0 {
+		if err := model.DB.Where("id IN ?", idsToDelete).Delete(&model.TalkRequest{}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete talk request and its versions: " + err.Error()})
+			return
+		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Talk request deleted successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "Talk request and all its versions deleted successfully"})
 }
 
