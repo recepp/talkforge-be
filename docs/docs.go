@@ -252,6 +252,242 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/rooms": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every room the authenticated user is a member of.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rooms"
+                ],
+                "summary": "List my rooms",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.RoomResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Creates a room that talks can be shared inside; the creator becomes its first writer member.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rooms"
+                ],
+                "summary": "Create a shared room",
+                "parameters": [
+                    {
+                        "description": "Create Room Payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.CreateRoomBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Room"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/rooms/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns a room's details and member list. Requires membership.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rooms"
+                ],
+                "summary": "Get room details",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.RoomResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/rooms/{id}/members": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Adds (or updates the role of) a user in a room by email. Requires the requester to be a writer member.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rooms"
+                ],
+                "summary": "Invite a member into a room",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Invite Payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.InviteMemberBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.RoomMember"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/talk-types": {
+            "get": {
+                "description": "Returns multi-language talk types localized based on Accept-Language header or lang query parameter.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Lookup"
+                ],
+                "summary": "List dynamic talk types / purposes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Language header e.g. tr, en, de",
+                        "name": "Accept-Language",
+                        "in": "header"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Language override query param e.g. tr, en, de",
+                        "name": "lang",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.TalkTypeResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/talks": {
             "get": {
                 "security": [
@@ -340,6 +576,119 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/v1/talks/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Deletes a dialogue generation request and any nested descendant updates.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Talks"
+                ],
+                "summary": "Delete dialogue request",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Talk Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/user/language": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Updates the preferred language of the authenticated user.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "User"
+                ],
+                "summary": "Update User Language",
+                "parameters": [
+                    {
+                        "description": "Language Update Payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateLanguageRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -358,6 +707,11 @@ const docTemplate = `{
                 "email": {
                     "type": "string",
                     "example": "user@example.com"
+                },
+                "language": {
+                    "description": "Optional on signup",
+                    "type": "string",
+                    "example": "tr"
                 },
                 "nickname": {
                     "description": "Required on signup",
@@ -385,6 +739,10 @@ const docTemplate = `{
                     "type": "string",
                     "example": "user@example.com"
                 },
+                "language": {
+                    "type": "string",
+                    "example": "tr"
+                },
                 "nickname": {
                     "type": "string",
                     "example": "my_nickname"
@@ -403,32 +761,52 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.CreateRoomBody": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "Pazarlama Ekibi"
+                }
+            }
+        },
         "handler.CreateTalkRequestBody": {
             "type": "object",
             "required": [
                 "mode"
             ],
             "properties": {
+                "custom_speech_type": {
+                    "type": "string",
+                    "example": "Özel Şirket İçi Sunum"
+                },
                 "duration": {
                     "type": "integer",
                     "example": 5
                 },
+                "generated_text": {
+                    "type": "string"
+                },
                 "instruction": {
-                    "description": "Required only for update mode",
+                    "description": "Required for update/partial_update",
                     "type": "string",
                     "example": "make the staff member more helpful"
                 },
                 "language": {
+                    "description": "For \"translate\" mode, this is the target language",
                     "type": "string",
                     "example": "German"
                 },
                 "mode": {
-                    "description": "\"new\" or \"update\"",
+                    "description": "\"new\", \"update\", \"partial_update\", \"manual_update\", or \"translate\"",
                     "type": "string",
                     "example": "new"
                 },
                 "parent_id": {
-                    "description": "Required only for update mode",
+                    "description": "Required for update/partial_update",
                     "type": "integer",
                     "example": 1
                 },
@@ -436,9 +814,19 @@ const docTemplate = `{
                     "type": "string",
                     "example": "Airport Check-in"
                 },
+                "room_id": {
+                    "description": "Optional: attach a \"new\" talk to a shared room (requires writer membership)",
+                    "type": "integer",
+                    "example": 1
+                },
+                "selected_text": {
+                    "description": "Required only for partial_update mode",
+                    "type": "string",
+                    "example": "Ladies and gentlemen..."
+                },
                 "speech_type": {
                     "type": "string",
-                    "example": "Siyasetçi Konuşması"
+                    "example": "politician"
                 },
                 "topic": {
                     "type": "string",
@@ -467,6 +855,67 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.InviteMemberBody": {
+            "type": "object",
+            "required": [
+                "email",
+                "role"
+            ],
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "example": "teammate@example.com"
+                },
+                "role": {
+                    "description": "\"writer\" or \"reader\"",
+                    "type": "string",
+                    "example": "writer"
+                }
+            }
+        },
+        "handler.RoomMemberResponse": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "user_id": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.RoomResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/handler.RoomMemberResponse"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
         "handler.TalkRequestResponse": {
             "type": "object",
             "properties": {
@@ -477,6 +926,9 @@ const docTemplate = `{
                     }
                 },
                 "created_at": {
+                    "type": "string"
+                },
+                "custom_speech_type": {
                     "type": "string"
                 },
                 "duration": {
@@ -506,6 +958,12 @@ const docTemplate = `{
                 "place": {
                     "type": "string"
                 },
+                "room_id": {
+                    "type": "integer"
+                },
+                "selected_text": {
+                    "type": "string"
+                },
                 "speech_type": {
                     "type": "string"
                 },
@@ -520,6 +978,88 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                },
+                "version_label": {
+                    "type": "string"
+                },
+                "version_number": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.TalkTypeResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "integer"
+                },
+                "is_custom": {
+                    "type": "boolean"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "symbol": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.UpdateLanguageRequest": {
+            "type": "object",
+            "required": [
+                "language"
+            ],
+            "properties": {
+                "language": {
+                    "type": "string",
+                    "example": "tr"
+                }
+            }
+        },
+        "model.Room": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.RoomMember": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "role": {
+                    "type": "string",
+                    "enum": [
+                        "writer",
+                        "reader"
+                    ]
+                },
+                "room_id": {
+                    "type": "integer"
+                },
+                "user_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -527,6 +1067,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "created_at": {
+                    "type": "string"
+                },
+                "custom_speech_type": {
                     "type": "string"
                 },
                 "duration": {
@@ -551,13 +1094,21 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "new",
-                        "update"
+                        "update",
+                        "partial_update"
                     ]
                 },
                 "parent_id": {
                     "type": "integer"
                 },
                 "place": {
+                    "type": "string"
+                },
+                "room_id": {
+                    "description": "nil = personal talk; set = shared inside a Room",
+                    "type": "integer"
+                },
+                "selected_text": {
                     "type": "string"
                 },
                 "speech_type": {
@@ -579,6 +1130,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "user_id": {
+                    "type": "integer"
+                },
+                "version_number": {
                     "type": "integer"
                 }
             }

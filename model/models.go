@@ -42,6 +42,7 @@ type TalkRequest struct {
 	SelectedText     string         `gorm:"type:text" json:"selected_text,omitempty"`
 	VersionNumber    int            `gorm:"type:integer;default:1;not null" json:"version_number"`
 	ParentID         *uint          `json:"parent_id,omitempty"`
+	RoomID           *uint          `json:"room_id,omitempty"` // nil = personal talk; set = shared inside a Room
 	GeneratedText    string         `gorm:"type:text" json:"generated_text,omitempty"`
 	ErrorMessage     string         `gorm:"type:text" json:"error_message,omitempty"`
 	CreatedAt        time.Time      `json:"created_at"`
@@ -76,5 +77,36 @@ type TalkType struct {
 // TableName overrides default table name for TalkType model to talk_types.
 func (TalkType) TableName() string {
 	return "talk_types"
+}
+
+// Room represents a shared workspace where members can jointly manage talks
+// (ownership of talks inside a room is via membership, not a single user).
+type Room struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"type:varchar(255);not null" json:"name"`
+	OwnerID   uint      `json:"owner_id"`
+	Owner     User      `gorm:"foreignKey:OwnerID" json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName overrides the default table name for the Room model to rooms.
+func (Room) TableName() string {
+	return "rooms"
+}
+
+// RoomMember represents a user's membership and role within a Room.
+type RoomMember struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	RoomID    uint      `gorm:"uniqueIndex:idx_room_member" json:"room_id"`
+	UserID    uint      `gorm:"uniqueIndex:idx_room_member" json:"user_id"`
+	User      User      `gorm:"foreignKey:UserID" json:"-"`
+	Role      string    `gorm:"type:varchar(20);not null" json:"role" enums:"writer,reader"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// TableName overrides the default table name for the RoomMember model to room_members.
+func (RoomMember) TableName() string {
+	return "room_members"
 }
 

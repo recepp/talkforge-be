@@ -91,6 +91,7 @@ func main() {
 	helloHandler := handler.NewHelloHandler()
 	talkHandler := handler.NewTalkHandler()
 	talkTypeHandler := handler.NewTalkTypeHandler()
+	roomHandler := handler.NewRoomHandler()
 
 	// API Routing Group
 	api := r.Group("/api/v1")
@@ -141,6 +142,16 @@ func main() {
 		userGroup.Use(auth.AuthMiddleware(cfg.JWTSecret))
 		{
 			userGroup.PUT("/language", authHandler.UpdateLanguage)
+		}
+
+		// Shared Room Endpoints (Protected by AuthMiddleware)
+		roomsGroup := api.Group("/rooms")
+		roomsGroup.Use(auth.AuthMiddleware(cfg.JWTSecret))
+		{
+			roomsGroup.POST("", roomHandler.CreateRoom)
+			roomsGroup.GET("", roomHandler.ListRooms)
+			roomsGroup.GET("/:id", roomHandler.GetRoom)
+			roomsGroup.POST("/:id/members", roomHandler.InviteMember)
 		}
 	}
 

@@ -9,6 +9,10 @@ definitions:
       email:
         example: user@example.com
         type: string
+      language:
+        description: Optional on signup
+        example: tr
+        type: string
       nickname:
         description: Required on signup
         example: my_nickname
@@ -31,6 +35,9 @@ definitions:
       email:
         example: user@example.com
         type: string
+      language:
+        example: tr
+        type: string
       nickname:
         example: my_nickname
         type: string
@@ -44,31 +51,54 @@ definitions:
         example: 1
         type: integer
     type: object
+  handler.CreateRoomBody:
+    properties:
+      name:
+        example: Pazarlama Ekibi
+        type: string
+    required:
+    - name
+    type: object
   handler.CreateTalkRequestBody:
     properties:
+      custom_speech_type:
+        example: Özel Şirket İçi Sunum
+        type: string
       duration:
         example: 5
         type: integer
+      generated_text:
+        type: string
       instruction:
-        description: Required only for update mode
+        description: Required for update/partial_update
         example: make the staff member more helpful
         type: string
       language:
+        description: For "translate" mode, this is the target language
         example: German
         type: string
       mode:
-        description: '"new" or "update"'
+        description: '"new", "update", "partial_update", "manual_update", or "translate"'
         example: new
         type: string
       parent_id:
-        description: Required only for update mode
+        description: Required for update/partial_update
         example: 1
         type: integer
       place:
         example: Airport Check-in
         type: string
+      room_id:
+        description: 'Optional: attach a "new" talk to a shared room (requires writer
+          membership)'
+        example: 1
+        type: integer
+      selected_text:
+        description: Required only for partial_update mode
+        example: Ladies and gentlemen...
+        type: string
       speech_type:
-        example: Siyasetçi Konuşması
+        example: politician
         type: string
       topic:
         example: Checking in baggage and asking for a window seat
@@ -90,6 +120,47 @@ definitions:
     required:
     - google_token
     type: object
+  handler.InviteMemberBody:
+    properties:
+      email:
+        example: teammate@example.com
+        type: string
+      role:
+        description: '"writer" or "reader"'
+        example: writer
+        type: string
+    required:
+    - email
+    - role
+    type: object
+  handler.RoomMemberResponse:
+    properties:
+      email:
+        type: string
+      nickname:
+        type: string
+      role:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  handler.RoomResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      members:
+        items:
+          $ref: '#/definitions/handler.RoomMemberResponse'
+        type: array
+      name:
+        type: string
+      owner_id:
+        type: integer
+      role:
+        type: string
+    type: object
   handler.TalkRequestResponse:
     properties:
       children:
@@ -97,6 +168,8 @@ definitions:
           $ref: '#/definitions/handler.TalkRequestResponse'
         type: array
       created_at:
+        type: string
+      custom_speech_type:
         type: string
       duration:
         type: integer
@@ -116,6 +189,10 @@ definitions:
         type: integer
       place:
         type: string
+      room_id:
+        type: integer
+      selected_text:
+        type: string
       speech_type:
         type: string
       status:
@@ -126,10 +203,66 @@ definitions:
         type: string
       user_id:
         type: integer
+      version_label:
+        type: string
+      version_number:
+        type: integer
+    type: object
+  handler.TalkTypeResponse:
+    properties:
+      id:
+        type: integer
+      is_custom:
+        type: boolean
+      key:
+        type: string
+      symbol:
+        type: string
+      title:
+        type: string
+    type: object
+  handler.UpdateLanguageRequest:
+    properties:
+      language:
+        example: tr
+        type: string
+    required:
+    - language
+    type: object
+  model.Room:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      owner_id:
+        type: integer
+      updated_at:
+        type: string
+    type: object
+  model.RoomMember:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      role:
+        enum:
+        - writer
+        - reader
+        type: string
+      room_id:
+        type: integer
+      user_id:
+        type: integer
     type: object
   model.TalkRequest:
     properties:
       created_at:
+        type: string
+      custom_speech_type:
         type: string
       duration:
         type: integer
@@ -147,10 +280,16 @@ definitions:
         enum:
         - new
         - update
+        - partial_update
         type: string
       parent_id:
         type: integer
       place:
+        type: string
+      room_id:
+        description: nil = personal talk; set = shared inside a Room
+        type: integer
+      selected_text:
         type: string
       speech_type:
         type: string
@@ -166,6 +305,8 @@ definitions:
       updated_at:
         type: string
       user_id:
+        type: integer
+      version_number:
         type: integer
     type: object
 info:
@@ -328,6 +469,159 @@ paths:
       summary: User Hello
       tags:
       - Hello
+  /api/v1/rooms:
+    get:
+      description: Returns every room the authenticated user is a member of.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.RoomResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my rooms
+      tags:
+      - Rooms
+    post:
+      consumes:
+      - application/json
+      description: Creates a room that talks can be shared inside; the creator becomes
+        its first writer member.
+      parameters:
+      - description: Create Room Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.CreateRoomBody'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.Room'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Create a shared room
+      tags:
+      - Rooms
+  /api/v1/rooms/{id}:
+    get:
+      description: Returns a room's details and member list. Requires membership.
+      parameters:
+      - description: Room ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.RoomResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Get room details
+      tags:
+      - Rooms
+  /api/v1/rooms/{id}/members:
+    post:
+      consumes:
+      - application/json
+      description: Adds (or updates the role of) a user in a room by email. Requires
+        the requester to be a writer member.
+      parameters:
+      - description: Room ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Invite Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.InviteMemberBody'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.RoomMember'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Invite a member into a room
+      tags:
+      - Rooms
+  /api/v1/talk-types:
+    get:
+      description: Returns multi-language talk types localized based on Accept-Language
+        header or lang query parameter.
+      parameters:
+      - description: Language header e.g. tr, en, de
+        in: header
+        name: Accept-Language
+        type: string
+      - description: Language override query param e.g. tr, en, de
+        in: query
+        name: lang
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.TalkTypeResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      summary: List dynamic talk types / purposes
+      tags:
+      - Lookup
   /api/v1/talks:
     get:
       description: Returns the dialogue generation requests for the authenticated
@@ -387,6 +681,79 @@ paths:
       summary: Create dialogue generation request
       tags:
       - Talks
+  /api/v1/talks/{id}:
+    delete:
+      description: Deletes a dialogue generation request and any nested descendant
+        updates.
+      parameters:
+      - description: Talk Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete dialogue request
+      tags:
+      - Talks
+  /api/v1/user/language:
+    put:
+      consumes:
+      - application/json
+      description: Updates the preferred language of the authenticated user.
+      parameters:
+      - description: Language Update Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateLanguageRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update User Language
+      tags:
+      - User
 securityDefinitions:
   BearerAuth:
     in: header

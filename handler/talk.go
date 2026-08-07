@@ -33,6 +33,7 @@ type CreateTalkRequestBody struct {
 	SelectedText     string `json:"selected_text,omitempty" example:"Ladies and gentlemen..."` // Required only for partial_update mode
 	GeneratedText    string `json:"generated_text,omitempty"`
 	ParentID         *uint  `json:"parent_id" example:"1"`                                  // Required for update/partial_update
+	RoomID           *uint  `json:"room_id,omitempty" example:"1"`                          // Optional: attach a "new" talk to a shared room (requires writer membership)
 }
 
 // TalkRequestResponse represents a dialogue node in the tree response.
@@ -52,6 +53,7 @@ type TalkRequestResponse struct {
 	VersionNumber    int                    `json:"version_number"`
 	VersionLabel     string                 `json:"version_label"`
 	ParentID         *uint                  `json:"parent_id,omitempty"`
+	RoomID           *uint                  `json:"room_id,omitempty"`
 	GeneratedText    string                 `json:"generated_text,omitempty"`
 	ErrorMessage     string                 `json:"error_message,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
@@ -100,6 +102,13 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "new mode requires 'language', 'place', 'topic', 'speech_type', and a positive 'duration'"})
 			return
 		}
+		if req.RoomID != nil {
+			if role, member := isRoomMember(userID.(uint), *req.RoomID); !member || role != "writer" {
+				c.JSON(http.StatusForbidden, ErrorResponse{Error: "you must be a writer member of this room to create talks in it"})
+				return
+			}
+			talkReq.RoomID = req.RoomID
+		}
 		talkReq.Language = req.Language
 		talkReq.Place = req.Place
 		talkReq.Topic = req.Topic
@@ -120,8 +129,8 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			return
 		}
 
-		if parent.UserID != userID.(uint) {
-			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you cannot update a dialogue belonging to another user"})
+		if !canAccessTalk(userID.(uint), parent, true) {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you do not have write access to this dialogue"})
 			return
 		}
 
@@ -162,6 +171,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.SpeechType = parent.SpeechType
 		talkReq.CustomSpeechType = parent.CustomSpeechType
 		talkReq.Duration = parent.Duration
+		talkReq.RoomID = parent.RoomID
 		talkReq.Instruction = req.Instruction
 		talkReq.ParentID = req.ParentID
 	} else if req.Mode == "partial_update" { // partial_update mode — edits only a selected section of the parent text
@@ -177,8 +187,8 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			return
 		}
 
-		if parent.UserID != userID.(uint) {
-			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you cannot update a dialogue belonging to another user"})
+		if !canAccessTalk(userID.(uint), parent, true) {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you do not have write access to this dialogue"})
 			return
 		}
 
@@ -219,6 +229,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.SpeechType = parent.SpeechType
 		talkReq.CustomSpeechType = parent.CustomSpeechType
 		talkReq.Duration = parent.Duration
+		talkReq.RoomID = parent.RoomID
 		talkReq.Instruction = req.Instruction
 		talkReq.SelectedText = req.SelectedText
 		talkReq.ParentID = req.ParentID
@@ -235,8 +246,8 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			return
 		}
 
-		if parent.UserID != userID.(uint) {
-			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you cannot update a dialogue belonging to another user"})
+		if !canAccessTalk(userID.(uint), parent, true) {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you do not have write access to this dialogue"})
 			return
 		}
 
@@ -273,6 +284,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.SpeechType = parent.SpeechType
 		talkReq.CustomSpeechType = parent.CustomSpeechType
 		talkReq.Duration = parent.Duration
+		talkReq.RoomID = parent.RoomID
 		talkReq.Instruction = req.Instruction
 		if talkReq.Instruction == "" {
 			talkReq.Instruction = "Manuel Düzeltme"
@@ -294,8 +306,8 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			return
 		}
 
-		if parent.UserID != userID.(uint) {
-			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you cannot translate a dialogue belonging to another user"})
+		if !canAccessTalk(userID.(uint), parent, true) {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you do not have write access to this dialogue"})
 			return
 		}
 
@@ -337,6 +349,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.SpeechType = parent.SpeechType
 		talkReq.CustomSpeechType = parent.CustomSpeechType
 		talkReq.Duration = parent.Duration
+		talkReq.RoomID = parent.RoomID
 		talkReq.Instruction = fmt.Sprintf("Translated to %s", req.Language)
 		talkReq.ParentID = req.ParentID
 	}
@@ -365,9 +378,22 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 		return
 	}
 
+	// Include talks the user owns directly, plus every talk inside a room
+	// they're a member of (regardless of which member authored each version)
+	// so a shared room tree looks the same to every member.
+	var memberRoomIDs []uint
+	model.DB.Model(&model.RoomMember{}).Where("user_id = ?", userID.(uint)).Pluck("room_id", &memberRoomIDs)
+
+	query := model.DB.Order("created_at asc")
+	if len(memberRoomIDs) > 0 {
+		query = query.Where("user_id = ? OR room_id IN ?", userID.(uint), memberRoomIDs)
+	} else {
+		query = query.Where("user_id = ?", userID.(uint))
+	}
+
 	var reqs []model.TalkRequest
 	// Query in chronological order so parent nodes are processed before children
-	if err := model.DB.Where("user_id = ?", userID.(uint)).Order("created_at asc").Find(&reqs).Error; err != nil {
+	if err := query.Find(&reqs).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query talk requests: " + err.Error()})
 		return
 	}
@@ -392,6 +418,7 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 			SelectedText:     r.SelectedText,
 			VersionNumber:    r.VersionNumber,
 			ParentID:         r.ParentID,
+			RoomID:           r.RoomID,
 			GeneratedText:    r.GeneratedText,
 			ErrorMessage:     r.ErrorMessage,
 			CreatedAt:        r.CreatedAt,
@@ -498,7 +525,7 @@ func (h *TalkHandler) DeleteTalkRequest(c *gin.Context) {
 		return
 	}
 
-	if talk.UserID != userID.(uint) {
+	if !canAccessTalk(userID.(uint), talk, true) {
 		c.JSON(http.StatusForbidden, ErrorResponse{Error: "You do not have permission to delete this talk request"})
 		return
 	}
