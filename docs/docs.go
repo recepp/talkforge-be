@@ -1172,6 +1172,9 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "member_count": {
+                    "type": "integer"
+                },
                 "members": {
                     "type": "array",
                     "items": {
@@ -1186,6 +1189,9 @@ const docTemplate = `{
                 },
                 "role": {
                     "type": "string"
+                },
+                "talk_count": {
+                    "type": "integer"
                 }
             }
         },

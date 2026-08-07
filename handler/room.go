@@ -30,12 +30,14 @@ type InviteMemberBody struct {
 
 // RoomResponse represents a room as returned to clients, including the requesting user's role in it.
 type RoomResponse struct {
-	ID        uint                 `json:"id"`
-	Name      string               `json:"name"`
-	OwnerID   uint                 `json:"owner_id"`
-	Role      string               `json:"role"`
-	Members   []RoomMemberResponse `json:"members,omitempty"`
-	CreatedAt time.Time            `json:"created_at"`
+	ID          uint                 `json:"id"`
+	Name        string               `json:"name"`
+	OwnerID     uint                 `json:"owner_id"`
+	Role        string               `json:"role"`
+	MemberCount int64                `json:"member_count"`
+	TalkCount   int64                `json:"talk_count"`
+	Members     []RoomMemberResponse `json:"members,omitempty"`
+	CreatedAt   time.Time            `json:"created_at"`
 }
 
 // RoomMemberResponse represents a room member as returned to clients.
@@ -221,14 +223,45 @@ func (h *RoomHandler) ListRooms(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query rooms: " + err.Error()})
 			return
 		}
+
+		memberCounts, talkCounts := roomCounts(roomIDs)
+
 		for _, r := range rooms {
 			resp = append(resp, RoomResponse{
-				ID: r.ID, Name: r.Name, OwnerID: r.OwnerID, Role: roleByRoom[r.ID], CreatedAt: r.CreatedAt,
+				ID: r.ID, Name: r.Name, OwnerID: r.OwnerID, Role: roleByRoom[r.ID],
+				MemberCount: memberCounts[r.ID], TalkCount: talkCounts[r.ID],
+				CreatedAt: r.CreatedAt,
 			})
 		}
 	}
 
 	c.JSON(http.StatusOK, resp)
+}
+
+// roomCounts returns member and talk counts for each of the given rooms in two batched queries.
+func roomCounts(roomIDs []uint) (memberCounts map[uint]int64, talkCounts map[uint]int64) {
+	memberCounts = make(map[uint]int64)
+	talkCounts = make(map[uint]int64)
+
+	var memberRows []struct {
+		RoomID uint
+		Count  int64
+	}
+	model.DB.Model(&model.RoomMember{}).Select("room_id, count(*) as count").Where("room_id IN ?", roomIDs).Group("room_id").Scan(&memberRows)
+	for _, row := range memberRows {
+		memberCounts[row.RoomID] = row.Count
+	}
+
+	var talkRows []struct {
+		RoomID uint
+		Count  int64
+	}
+	model.DB.Model(&model.TalkRequest{}).Select("room_id, count(*) as count").Where("room_id IN ?", roomIDs).Group("room_id").Scan(&talkRows)
+	for _, row := range talkRows {
+		talkCounts[row.RoomID] = row.Count
+	}
+
+	return memberCounts, talkCounts
 }
 
 // GetRoom returns room details including its member list. Requires the requester to be a member.
@@ -280,7 +313,12 @@ func (h *RoomHandler) GetRoom(c *gin.Context) {
 		}
 	}
 
+	var talkCount int64
+	model.DB.Model(&model.TalkRequest{}).Where("room_id = ?", roomID).Count(&talkCount)
+
 	c.JSON(http.StatusOK, RoomResponse{
-		ID: room.ID, Name: room.Name, OwnerID: room.OwnerID, Role: role, Members: memberResp, CreatedAt: room.CreatedAt,
+		ID: room.ID, Name: room.Name, OwnerID: room.OwnerID, Role: role,
+		MemberCount: int64(len(memberResp)), TalkCount: talkCount,
+		Members: memberResp, CreatedAt: room.CreatedAt,
 	})
 }

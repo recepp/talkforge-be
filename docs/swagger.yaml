@@ -176,6 +176,8 @@ definitions:
         type: string
       id:
         type: integer
+      member_count:
+        type: integer
       members:
         items:
           $ref: '#/definitions/handler.RoomMemberResponse'
@@ -186,6 +188,8 @@ definitions:
         type: integer
       role:
         type: string
+      talk_count:
+        type: integer
     type: object
   handler.TalkRequestResponse:
     properties:

@@ -1165,6 +1165,9 @@
                 "id": {
                     "type": "integer"
                 },
+                "member_count": {
+                    "type": "integer"
+                },
                 "members": {
                     "type": "array",
                     "items": {
@@ -1179,6 +1182,9 @@
                 },
                 "role": {
                     "type": "string"
+                },
+                "talk_count": {
+                    "type": "integer"
                 }
             }
         },
