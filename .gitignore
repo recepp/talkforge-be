@@ -7,3 +7,8 @@ talkforge-be
 talkforge-be-server
 dist/
 build/
+
+# Go temp dir (GOTMPDIR - bypasses Windows App Control)
+.gorun/
+.gocache/
+.__gorun_tmp.exe

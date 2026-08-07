@@ -30,6 +30,7 @@ type CreateTalkRequestBody struct {
 	CustomSpeechType string `json:"custom_speech_type,omitempty" example:"Özel Şirket İçi Sunum"`
 	Instruction      string `json:"instruction" example:"make the staff member more helpful"` // Required for update/partial_update
 	SelectedText     string `json:"selected_text,omitempty" example:"Ladies and gentlemen..."` // Required only for partial_update mode
+	GeneratedText    string `json:"generated_text,omitempty"`
 	ParentID         *uint  `json:"parent_id" example:"1"`                                  // Required for update/partial_update
 }
 
@@ -82,8 +83,8 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		return
 	}
 
-	if req.Mode != "new" && req.Mode != "update" && req.Mode != "partial_update" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "mode must be 'new', 'update', or 'partial_update'"})
+	if req.Mode != "new" && req.Mode != "update" && req.Mode != "partial_update" && req.Mode != "manual_update" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "mode must be 'new', 'update', 'partial_update', or 'manual_update'"})
 		return
 	}
 
@@ -161,7 +162,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.Duration = parent.Duration
 		talkReq.Instruction = req.Instruction
 		talkReq.ParentID = req.ParentID
-	} else { // partial_update mode — edits only a selected section of the parent text
+	} else if req.Mode == "partial_update" { // partial_update mode — edits only a selected section of the parent text
 		if req.ParentID == nil || req.Instruction == "" || req.SelectedText == "" {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "partial_update mode requires 'parent_id', 'instruction', and 'selected_text'"})
 			return
@@ -218,6 +219,65 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.Duration = parent.Duration
 		talkReq.Instruction = req.Instruction
 		talkReq.SelectedText = req.SelectedText
+		talkReq.ParentID = req.ParentID
+	} else if req.Mode == "manual_update" {
+		if req.ParentID == nil || req.GeneratedText == "" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "manual_update mode requires 'parent_id' and 'generated_text'"})
+			return
+		}
+
+		// Verify parent request exists and belongs to this user
+		var parent model.TalkRequest
+		if err := model.DB.First(&parent, *req.ParentID).Error; err != nil {
+			c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("parent request %d not found", *req.ParentID)})
+			return
+		}
+
+		if parent.UserID != userID.(uint) {
+			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you cannot update a dialogue belonging to another user"})
+			return
+		}
+
+		if parent.Status != "completed" {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "cannot update a dialogue request that has not completed successfully"})
+			return
+		}
+
+		rootID := *req.ParentID
+		current := parent
+		for current.ParentID != nil {
+			var ancestor model.TalkRequest
+			if err := model.DB.Unscoped().First(&ancestor, *current.ParentID).Error; err != nil {
+				break
+			}
+			current = ancestor
+		}
+		rootID = current.ID
+
+		var maxVersion int
+		model.DB.Unscoped().Raw(`
+			WITH RECURSIVE tree AS (
+				SELECT id, version_number FROM talk_requests WHERE id = ?
+				UNION ALL
+				SELECT tr.id, tr.version_number FROM talk_requests tr
+				INNER JOIN tree ON tr.parent_id = tree.id
+			)
+			SELECT COALESCE(MAX(version_number), 0) FROM tree`, rootID).Scan(&maxVersion)
+
+		talkReq.VersionNumber = maxVersion + 1
+		talkReq.Language = parent.Language
+		talkReq.Place = parent.Place
+		talkReq.Topic = parent.Topic
+		talkReq.SpeechType = parent.SpeechType
+		talkReq.CustomSpeechType = parent.CustomSpeechType
+		talkReq.Duration = parent.Duration
+		talkReq.Instruction = req.Instruction
+		if talkReq.Instruction == "" {
+			talkReq.Instruction = "Manuel Düzeltme"
+		}
+		talkReq.SelectedText = req.SelectedText
+		talkReq.GeneratedText = req.GeneratedText
+		talkReq.Status = "completed"
 		talkReq.ParentID = req.ParentID
 	}
 
