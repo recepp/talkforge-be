@@ -794,6 +794,70 @@
                 }
             }
         },
+        "/api/v1/talks/{id}/translate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the talk's text translated into the given language. Not persisted — no new version is created. Requires read access to the talk.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Talks"
+                ],
+                "summary": "Preview a talk translated into another language",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Talk Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target Language",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.TranslateBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.TranslateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/user/language": {
             "put": {
                 "security": [
@@ -958,12 +1022,11 @@
                     "example": "make the staff member more helpful"
                 },
                 "language": {
-                    "description": "For \"translate\" mode, this is the target language",
                     "type": "string",
                     "example": "German"
                 },
                 "mode": {
-                    "description": "\"new\", \"update\", \"partial_update\", \"manual_update\", or \"translate\"",
+                    "description": "\"new\", \"update\", \"partial_update\", or \"manual_update\"",
                     "type": "string",
                     "example": "new"
                 },
@@ -1206,6 +1269,29 @@
                     "type": "string"
                 },
                 "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.TranslateBody": {
+            "type": "object",
+            "required": [
+                "language"
+            ],
+            "properties": {
+                "language": {
+                    "type": "string",
+                    "example": "İngilizce"
+                }
+            }
+        },
+        "handler.TranslateResponse": {
+            "type": "object",
+            "properties": {
+                "language": {
+                    "type": "string"
+                },
+                "text": {
                     "type": "string"
                 }
             }

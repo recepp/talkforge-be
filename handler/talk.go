@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
@@ -8,22 +9,28 @@ import (
 	"strings"
 	"time"
 
+	"talkforge-be/config"
 	"talkforge-be/model"
+
 	"github.com/gin-gonic/gin"
+	"github.com/google/generative-ai-go/genai"
+	"google.golang.org/api/option"
 )
 
 // TalkHandler handles dialogue generation request endpoints.
-type TalkHandler struct{}
+type TalkHandler struct {
+	cfg *config.Config
+}
 
 // NewTalkHandler instantiates a new TalkHandler.
-func NewTalkHandler() *TalkHandler {
-	return &TalkHandler{}
+func NewTalkHandler(cfg *config.Config) *TalkHandler {
+	return &TalkHandler{cfg: cfg}
 }
 
 // CreateTalkRequestBody represents the payload to create a new dialogue request.
 type CreateTalkRequestBody struct {
-	Mode             string `json:"mode" binding:"required" example:"new"` // "new", "update", "partial_update", "manual_update", or "translate"
-	Language         string `json:"language" example:"German"`             // For "translate" mode, this is the target language
+	Mode             string `json:"mode" binding:"required" example:"new"` // "new", "update", "partial_update", or "manual_update"
+	Language         string `json:"language" example:"German"`
 	Place            string `json:"place" example:"Airport Check-in"`
 	Topic            string `json:"topic" example:"Checking in baggage and asking for a window seat"`
 	Duration         int    `json:"duration" example:"5"`
@@ -87,8 +94,8 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		return
 	}
 
-	if req.Mode != "new" && req.Mode != "update" && req.Mode != "partial_update" && req.Mode != "manual_update" && req.Mode != "translate" {
-		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "mode must be 'new', 'update', 'partial_update', 'manual_update', or 'translate'"})
+	if req.Mode != "new" && req.Mode != "update" && req.Mode != "partial_update" && req.Mode != "manual_update" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "mode must be 'new', 'update', 'partial_update', or 'manual_update'"})
 		return
 	}
 
@@ -293,65 +300,6 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.GeneratedText = req.GeneratedText
 		talkReq.Status = "completed"
 		talkReq.ParentID = req.ParentID
-	} else if req.Mode == "translate" {
-		if req.ParentID == nil || req.Language == "" {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "translate mode requires 'parent_id' and a target 'language'"})
-			return
-		}
-
-		// Verify parent request exists and belongs to this user
-		var parent model.TalkRequest
-		if err := model.DB.First(&parent, *req.ParentID).Error; err != nil {
-			c.JSON(http.StatusNotFound, ErrorResponse{Error: fmt.Sprintf("parent request %d not found", *req.ParentID)})
-			return
-		}
-
-		if !canAccessTalk(userID.(uint), parent, true) {
-			c.JSON(http.StatusForbidden, ErrorResponse{Error: "you do not have write access to this dialogue"})
-			return
-		}
-
-		if parent.Status != "completed" {
-			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "cannot translate a dialogue request that has not completed successfully"})
-			return
-		}
-
-		// Find root of this conversation tree (including soft-deleted ancestors)
-		rootID := *req.ParentID
-		current := parent
-		for current.ParentID != nil {
-			var ancestor model.TalkRequest
-			if err := model.DB.Unscoped().First(&ancestor, *current.ParentID).Error; err != nil {
-				break
-			}
-			current = ancestor
-		}
-		rootID = current.ID
-
-		// Find maximum version_number in this tree (including soft-deleted nodes)
-		var maxVersion int
-		model.DB.Unscoped().Raw(`
-			WITH RECURSIVE tree AS (
-				SELECT id, version_number FROM talk_requests WHERE id = ?
-				UNION ALL
-				SELECT tr.id, tr.version_number FROM talk_requests tr
-				INNER JOIN tree ON tr.parent_id = tree.id
-			)
-			SELECT COALESCE(MAX(version_number), 0) FROM tree`, rootID).Scan(&maxVersion)
-
-		talkReq.VersionNumber = maxVersion + 1
-
-		// Unlike update/partial_update, the language is NOT inherited — it's
-		// the translation target the caller asked for.
-		talkReq.Language = req.Language
-		talkReq.Place = parent.Place
-		talkReq.Topic = parent.Topic
-		talkReq.SpeechType = parent.SpeechType
-		talkReq.CustomSpeechType = parent.CustomSpeechType
-		talkReq.Duration = parent.Duration
-		talkReq.RoomID = parent.RoomID
-		talkReq.Instruction = fmt.Sprintf("Translated to %s", req.Language)
-		talkReq.ParentID = req.ParentID
 	}
 
 	if err := model.DB.Create(&talkReq).Error; err != nil {
@@ -553,5 +501,127 @@ func (h *TalkHandler) DeleteTalkRequest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Talk request and all its versions deleted successfully"})
+}
+
+// TranslateBody represents the payload to preview a talk's text in another language.
+type TranslateBody struct {
+	Language string `json:"language" binding:"required" example:"İngilizce"`
+}
+
+// TranslateResponse represents an ephemeral translation preview.
+type TranslateResponse struct {
+	Language string `json:"language"`
+	Text     string `json:"text"`
+}
+
+// TranslateTalk translates a talk's generated text into another language for
+// display purposes only — nothing is persisted, no new version is created.
+// The version tree, and any subsequent edit/update, is always based on the
+// talk's own original-language text.
+// @Summary Preview a talk translated into another language
+// @Description Returns the talk's text translated into the given language. Not persisted — no new version is created. Requires read access to the talk.
+// @Tags Talks
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "Talk Request ID"
+// @Param request body TranslateBody true "Target Language"
+// @Success 200 {object} TranslateResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/v1/talks/{id}/translate [post]
+func (h *TalkHandler) TranslateTalk(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized context missing"})
+		return
+	}
+
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid talk request ID"})
+		return
+	}
+
+	var req TranslateBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	var talk model.TalkRequest
+	if err := model.DB.First(&talk, uint(id)).Error; err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Talk request not found"})
+		return
+	}
+
+	if !canAccessTalk(userID.(uint), talk, false) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "You do not have permission to view this talk request"})
+		return
+	}
+
+	if talk.Status != "completed" || talk.GeneratedText == "" {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "cannot translate a talk that has not completed successfully"})
+		return
+	}
+
+	if h.cfg.GeminiAPIKey == "" {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "GEMINI_API_KEY is not configured"})
+		return
+	}
+
+	translated, err := h.translateText(c.Request.Context(), talk.GeneratedText, req.Language, talk.Duration)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to translate: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, TranslateResponse{Language: req.Language, Text: translated})
+}
+
+// translateText asks Gemini to translate a speech into targetLanguage,
+// preserving meaning, tone, and approximate spoken length.
+func (h *TalkHandler) translateText(ctx context.Context, text string, targetLanguage string, durationMinutes int) (string, error) {
+	client, err := genai.NewClient(ctx, option.WithAPIKey(h.cfg.GeminiAPIKey))
+	if err != nil {
+		return "", fmt.Errorf("failed to init Gemini client: %v", err)
+	}
+	defer client.Close()
+
+	geminiModel := client.GenerativeModel("gemini-3.1-flash-lite")
+	geminiModel.SystemInstruction = &genai.Content{
+		Parts: []genai.Part{genai.Text(
+			"You are an expert speech translator. Translate the provided speech into the target language, " +
+				"preserving its meaning, tone, structure, and speaking pace — this is a translation, not a " +
+				"rewrite. Output ONLY the raw translated speech text itself, without any introductory or " +
+				"concluding meta-commentary, notes, or markdown formatting (no backticks or ```).",
+		)},
+	}
+
+	wordCount := durationMinutes * 130
+	prompt := fmt.Sprintf(
+		"ORIGINAL SPEECH:\n%s\n\nTranslate the speech above into %s. Keep it natural for a native speaker of "+
+			"that language while preserving the original meaning and approximate length (approx. %d words).",
+		text, targetLanguage, wordCount,
+	)
+
+	resp, err := geminiModel.GenerateContent(ctx, genai.Text(prompt))
+	if err != nil {
+		return "", fmt.Errorf("gemini API error: %v", err)
+	}
+
+	var out string
+	if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {
+		for _, part := range resp.Candidates[0].Content.Parts {
+			if txt, ok := part.(genai.Text); ok {
+				out += string(txt)
+			}
+		}
+	}
+	if out == "" {
+		return "", fmt.Errorf("empty response received from Gemini model")
+	}
+	return out, nil
 }
 

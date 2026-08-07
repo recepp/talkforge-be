@@ -74,11 +74,10 @@ definitions:
         example: make the staff member more helpful
         type: string
       language:
-        description: For "translate" mode, this is the target language
         example: German
         type: string
       mode:
-        description: '"new", "update", "partial_update", "manual_update", or "translate"'
+        description: '"new", "update", "partial_update", or "manual_update"'
         example: new
         type: string
       parent_id:
@@ -246,6 +245,21 @@ definitions:
       symbol:
         type: string
       title:
+        type: string
+    type: object
+  handler.TranslateBody:
+    properties:
+      language:
+        example: İngilizce
+        type: string
+    required:
+    - language
+    type: object
+  handler.TranslateResponse:
+    properties:
+      language:
+        type: string
+      text:
         type: string
     type: object
   handler.UpdateLanguageRequest:
@@ -870,6 +884,48 @@ paths:
       summary: Summarize discussion into a new version
       tags:
       - Discussion
+  /api/v1/talks/{id}/translate:
+    post:
+      consumes:
+      - application/json
+      description: Returns the talk's text translated into the given language. Not
+        persisted — no new version is created. Requires read access to the talk.
+      parameters:
+      - description: Talk Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Target Language
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.TranslateBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.TranslateResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Preview a talk translated into another language
+      tags:
+      - Talks
   /api/v1/user/language:
     put:
       consumes:

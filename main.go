@@ -89,7 +89,7 @@ func main() {
 	// Instantiating Handlers
 	authHandler := handler.NewAuthHandler(cfg)
 	helloHandler := handler.NewHelloHandler()
-	talkHandler := handler.NewTalkHandler()
+	talkHandler := handler.NewTalkHandler(cfg)
 	talkTypeHandler := handler.NewTalkTypeHandler()
 	roomHandler := handler.NewRoomHandler()
 	discussionHandler := handler.NewDiscussionHandler(cfg)
@@ -136,6 +136,7 @@ func main() {
 			talksGroup.POST("", talkHandler.CreateTalkRequest)
 			talksGroup.GET("", talkHandler.ListTalkRequests)
 			talksGroup.DELETE("/:id", talkHandler.DeleteTalkRequest)
+			talksGroup.POST("/:id/translate", talkHandler.TranslateTalk)
 
 			// Room discussion thread for a talk (only meaningful for room-shared talks)
 			talksGroup.GET("/:id/messages", discussionHandler.ListMessages)
