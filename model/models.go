@@ -41,6 +41,7 @@ type TalkRequest struct {
 	Instruction      string         `gorm:"type:text" json:"instruction,omitempty"`
 	SelectedText     string         `gorm:"type:text" json:"selected_text,omitempty"`
 	VersionNumber    int            `gorm:"type:integer;default:1;not null" json:"version_number"`
+	VersionLabel     string         `gorm:"type:varchar(50);default:'';not null" json:"version_label"`
 	ParentID         *uint          `json:"parent_id,omitempty"`
 	RoomID           *uint          `json:"room_id,omitempty"` // nil = personal talk; set = shared inside a Room
 	GeneratedText    string         `gorm:"type:text" json:"generated_text,omitempty"`
