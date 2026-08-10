@@ -123,6 +123,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 		talkReq.CustomSpeechType = req.CustomSpeechType
 		talkReq.Duration = req.Duration
 		talkReq.VersionNumber = 1 // Root is always version 1
+		talkReq.VersionLabel = "1"
 	} else if req.Mode == "update" {
 		if req.ParentID == nil || req.Instruction == "" {
 			c.JSON(http.StatusBadRequest, ErrorResponse{Error: "update mode requires 'parent_id' and 'instruction'"})
@@ -170,6 +171,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			SELECT COALESCE(MAX(version_number), 0) FROM tree`, rootID).Scan(&maxVersion)
 
 		talkReq.VersionNumber = maxVersion + 1
+		talkReq.VersionLabel = generateVersionLabel(parent)
 
 		// Inherit details from parent for update request
 		talkReq.Language = parent.Language
@@ -228,6 +230,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			SELECT COALESCE(MAX(version_number), 0) FROM tree`, rootID).Scan(&maxVersion)
 
 		talkReq.VersionNumber = maxVersion + 1
+		talkReq.VersionLabel = generateVersionLabel(parent)
 
 		// Inherit details from parent
 		talkReq.Language = parent.Language
@@ -285,6 +288,7 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 			SELECT COALESCE(MAX(version_number), 0) FROM tree`, rootID).Scan(&maxVersion)
 
 		talkReq.VersionNumber = maxVersion + 1
+		talkReq.VersionLabel = generateVersionLabel(parent)
 		talkReq.Language = parent.Language
 		talkReq.Place = parent.Place
 		talkReq.Topic = parent.Topic
@@ -350,6 +354,15 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 	nodeMap := make(map[uint]*TalkRequestResponse)
 	var roots []*TalkRequestResponse
 
+	backfillVersionLabels()
+
+	var allReqs []model.TalkRequest
+	model.DB.Unscoped().Find(&allReqs)
+	allReqsMap := make(map[uint]model.TalkRequest)
+	for _, r := range allReqs {
+		allReqsMap[r.ID] = r
+	}
+
 	for _, r := range reqs {
 		node := &TalkRequestResponse{
 			ID:               r.ID,
@@ -365,6 +378,7 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 			Instruction:      r.Instruction,
 			SelectedText:     r.SelectedText,
 			VersionNumber:    r.VersionNumber,
+			VersionLabel:     r.VersionLabel,
 			ParentID:         r.ParentID,
 			RoomID:           r.RoomID,
 			GeneratedText:    r.GeneratedText,
@@ -376,16 +390,60 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 		nodeMap[r.ID] = node
 	}
 
+	// Group active nodes by ultimate root ID to ensure all surviving versions of a talk
+	// remain grouped in ONE conversation family even if the initial version is soft-deleted.
+	familyMap := make(map[uint][]*TalkRequestResponse)
+	for _, node := range nodeMap {
+		rootID := getUltimateRootID(node.ID, allReqsMap)
+		familyMap[rootID] = append(familyMap[rootID], node)
+	}
+
+	familyPrimaryRoot := make(map[uint]*TalkRequestResponse)
+	for rootID, members := range familyMap {
+		var primary *TalkRequestResponse
+		for _, m := range members {
+			if m.ID == rootID {
+				primary = m
+				break
+			}
+			if primary == nil || m.ID < primary.ID {
+				primary = m
+			}
+		}
+		familyPrimaryRoot[rootID] = primary
+	}
+
 	for _, node := range nodeMap {
 		if node.ParentID != nil {
 			if parentNode, exists := nodeMap[*node.ParentID]; exists {
 				parentNode.Children = append(parentNode.Children, node)
 			} else {
-				// Parent request is not in the list (e.g. deleted or anomalous), treat as root
-				roots = append(roots, node)
+				// Parent request is soft-deleted, attach to nearest active ancestor in tree
+				ancestor := findNearestActiveAncestor(node, nodeMap, allReqsMap)
+				if ancestor != nil {
+					ancestor.Children = append(ancestor.Children, node)
+				} else {
+					rootID := getUltimateRootID(node.ID, allReqsMap)
+					primary := familyPrimaryRoot[rootID]
+					if primary != nil && node.ID == primary.ID {
+						roots = append(roots, node)
+					} else if primary != nil {
+						primary.Children = append(primary.Children, node)
+					} else {
+						roots = append(roots, node)
+					}
+				}
 			}
 		} else {
-			roots = append(roots, node)
+			rootID := getUltimateRootID(node.ID, allReqsMap)
+			primary := familyPrimaryRoot[rootID]
+			if primary != nil && node.ID == primary.ID {
+				roots = append(roots, node)
+			} else if primary != nil {
+				primary.Children = append(primary.Children, node)
+			} else {
+				roots = append(roots, node)
+			}
 		}
 	}
 
@@ -401,11 +459,6 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 				return node.Children[i].ID < node.Children[j].ID
 			})
 		}
-	}
-
-	// Recursively assign hierarchical version labels (e.g. 1, 2, 2.1, 2.2, 2.1.1)
-	for _, root := range roots {
-		assignVersionLabels(root, "1")
 	}
 
 	// If no records, return empty array instead of null
@@ -478,29 +531,141 @@ func (h *TalkHandler) DeleteTalkRequest(c *gin.Context) {
 		return
 	}
 
-	// Recursively collect all descendant IDs of this talk request (including itself)
-	var idsToDelete []uint
-	if err := model.DB.Raw(`
-		WITH RECURSIVE tree AS (
-			SELECT id FROM talk_requests WHERE id = ?
-			UNION ALL
-			SELECT tr.id FROM talk_requests tr
-			INNER JOIN tree ON tr.parent_id = tree.id
-		)
-		SELECT id FROM tree`, talk.ID).Scan(&idsToDelete).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to find descendant talk requests: " + err.Error()})
-		return
-	}
+	cascade := c.Query("cascade") == "true"
 
-	// Delete target talk request and all its child versions
-	if len(idsToDelete) > 0 {
-		if err := model.DB.Where("id IN ?", idsToDelete).Delete(&model.TalkRequest{}).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete talk request and its versions: " + err.Error()})
+	if cascade {
+		// Full talk tree delete: Recursively collect all descendant IDs of this talk request (including itself)
+		var idsToDelete []uint
+		if err := model.DB.Raw(`
+			WITH RECURSIVE tree AS (
+				SELECT id FROM talk_requests WHERE id = ?
+				UNION ALL
+				SELECT tr.id FROM talk_requests tr
+				INNER JOIN tree ON tr.parent_id = tree.id
+			)
+			SELECT id FROM tree`, talk.ID).Scan(&idsToDelete).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to find descendant talk requests: " + err.Error()})
+			return
+		}
+
+		// Delete target talk request and all its child versions
+		if len(idsToDelete) > 0 {
+			if err := model.DB.Where("id IN ?", idsToDelete).Delete(&model.TalkRequest{}).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete talk request and its versions: " + err.Error()})
+				return
+			}
+		}
+	} else {
+		// Single node delete: Soft-delete ONLY this talk request. Keep parent_id intact in DB
+		// so tree lineage and version_label calculations remain 100% immutable!
+		if err := model.DB.Delete(&talk).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to delete talk request: " + err.Error()})
 			return
 		}
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Talk request and all its versions deleted successfully"})
+	c.JSON(http.StatusOK, gin.H{"message": "Talk request deleted successfully"})
+}
+
+func generateVersionLabel(parent model.TalkRequest) string {
+	parentLabel := parent.VersionLabel
+	if parentLabel == "" {
+		parentLabel = "1"
+	}
+
+	var childCount int64
+	model.DB.Unscoped().Model(&model.TalkRequest{}).Where("parent_id = ?", parent.ID).Count(&childCount)
+
+	if childCount == 0 {
+		parts := strings.Split(parentLabel, ".")
+		lastVal, _ := strconv.Atoi(parts[len(parts)-1])
+		parts[len(parts)-1] = strconv.Itoa(lastVal + 1)
+		return strings.Join(parts, ".")
+	}
+	return fmt.Sprintf("%s.%d", parentLabel, childCount)
+}
+
+func backfillVersionLabels() {
+	var allReqs []model.TalkRequest
+	if err := model.DB.Unscoped().Order("id asc").Find(&allReqs).Error; err != nil || len(allReqs) == 0 {
+		return
+	}
+
+	labelMap := make(map[uint]string)
+	parentChildrenMap := make(map[uint][]uint)
+
+	for _, r := range allReqs {
+		if r.ParentID != nil {
+			parentChildrenMap[*r.ParentID] = append(parentChildrenMap[*r.ParentID], r.ID)
+		}
+	}
+
+	for _, r := range allReqs {
+		var label string
+		if r.ParentID == nil {
+			label = "1"
+		} else {
+			parentLabel := labelMap[*r.ParentID]
+			if parentLabel == "" {
+				parentLabel = "1"
+			}
+
+			siblings := parentChildrenMap[*r.ParentID]
+			idx := 0
+			for i, sibID := range siblings {
+				if sibID == r.ID {
+					idx = i
+					break
+				}
+			}
+
+			if idx == 0 {
+				parts := strings.Split(parentLabel, ".")
+				lastVal, _ := strconv.Atoi(parts[len(parts)-1])
+				parts[len(parts)-1] = strconv.Itoa(lastVal + 1)
+				label = strings.Join(parts, ".")
+			} else {
+				label = fmt.Sprintf("%s.%d", parentLabel, idx)
+			}
+		}
+
+		labelMap[r.ID] = label
+		if r.VersionLabel != label {
+			model.DB.Unscoped().Model(&model.TalkRequest{}).Where("id = ?", r.ID).Update("version_label", label)
+		}
+	}
+}
+
+func getUltimateRootID(id uint, allReqsMap map[uint]model.TalkRequest) uint {
+	currID := id
+	visited := make(map[uint]bool)
+	for {
+		if visited[currID] {
+			break
+		}
+		visited[currID] = true
+		req, exists := allReqsMap[currID]
+		if !exists || req.ParentID == nil {
+			return currID
+		}
+		currID = *req.ParentID
+	}
+	return currID
+}
+
+func findNearestActiveAncestor(node *TalkRequestResponse, nodeMap map[uint]*TalkRequestResponse, allReqsMap map[uint]model.TalkRequest) *TalkRequestResponse {
+	currParentID := node.ParentID
+	for currParentID != nil {
+		if activeParent, exists := nodeMap[*currParentID]; exists {
+			return activeParent
+		}
+		if parentReq, exists := allReqsMap[*currParentID]; exists {
+			currParentID = parentReq.ParentID
+		} else {
+			break
+		}
+	}
+	return nil
 }
 
 // TranslateBody represents the payload to preview a talk's text in another language.
