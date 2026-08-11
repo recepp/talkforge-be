@@ -116,7 +116,13 @@ func (h *AuthHandler) Signup(c *gin.Context) {
 		return
 	}
 
+	// Link any pending email-based invites for this email address to the new user.
+	model.DB.Model(&model.RoomMember{}).
+		Where("invited_email = ? AND status = 'pending'", newUser.Email).
+		Updates(map[string]interface{}{"user_id": newUser.ID, "invited_email": ""})
+
 	// Generate JWT Token
+
 	token, err := auth.GenerateToken(newUser.ID, newUser.Email, newUser.Role, h.cfg.JWTSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to generate authorization token"})

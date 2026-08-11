@@ -97,13 +97,19 @@ func (Room) TableName() string {
 }
 
 // RoomMember represents a user's membership and role within a Room.
+// Status lifecycle: "pending" → "accepted" | "declined".
+// Room owners are always inserted with status="accepted".
+// InvitedEmail is set when the invitee has no account yet; cleared after account linking.
 type RoomMember struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	RoomID    uint      `gorm:"uniqueIndex:idx_room_member" json:"room_id"`
-	UserID    uint      `gorm:"uniqueIndex:idx_room_member" json:"user_id"`
-	User      User      `gorm:"foreignKey:UserID" json:"-"`
-	Role      string    `gorm:"type:varchar(20);not null" json:"role" enums:"writer,reader"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           uint      `gorm:"primaryKey" json:"id"`
+	RoomID       uint      `gorm:"index:idx_room_member" json:"room_id"`
+	UserID       *uint     `gorm:"index:idx_room_member" json:"user_id,omitempty"`
+	InvitedEmail string    `gorm:"type:varchar(255);default:''" json:"invited_email,omitempty"`
+	User         User      `gorm:"foreignKey:UserID" json:"-"`
+	Role         string    `gorm:"type:varchar(20);not null" json:"role" enums:"writer,reader"`
+	Status       string    `gorm:"type:varchar(20);default:'accepted';not null" json:"status" enums:"pending,accepted,declined"`
+	LastReadAt   time.Time `json:"last_read_at"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // TableName overrides the default table name for the RoomMember model to room_members.
