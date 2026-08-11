@@ -44,6 +44,8 @@ type TalkRequest struct {
 	VersionLabel     string         `gorm:"type:varchar(50);default:'';not null" json:"version_label"`
 	ParentID         *uint          `json:"parent_id,omitempty"`
 	RoomID           *uint          `json:"room_id,omitempty"` // nil = personal talk; set = shared inside a Room
+	IsFavorite       bool           `gorm:"default:false;not null" json:"is_favorite"`
+	IsArchived       bool           `gorm:"default:false;not null" json:"is_archived"`
 	GeneratedText    string         `gorm:"type:text" json:"generated_text,omitempty"`
 	ErrorMessage     string         `gorm:"type:text" json:"error_message,omitempty"`
 	CreatedAt        time.Time      `json:"created_at"`
@@ -54,6 +56,23 @@ type TalkRequest struct {
 // TableName overrides the default table name for the TalkRequest model to talk_requests.
 func (TalkRequest) TableName() string {
 	return "talk_requests"
+}
+
+// TalkTag represents a user-defined label attached to a root conversation.
+// Tags are stored per-user so that room members can independently label shared talks.
+// Only root TalkRequests (parent_id IS NULL) may have tags; this constraint is
+// enforced at the handler layer.
+type TalkTag struct {
+	ID          uint      `gorm:"primaryKey" json:"id"`
+	RootTalkID  uint      `gorm:"index:idx_talk_tag_unique,unique" json:"root_talk_id"`
+	UserID      uint      `gorm:"index:idx_talk_tag_unique,unique" json:"user_id"`
+	Name        string    `gorm:"type:varchar(100);index:idx_talk_tag_unique,unique;not null" json:"name"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// TableName overrides the default table name for the TalkTag model to talk_tags.
+func (TalkTag) TableName() string {
+	return "talk_tags"
 }
 
 // TalkType represents a dynamic talk type/purpose with multi-language labels and system prompt.

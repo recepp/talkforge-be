@@ -61,6 +61,9 @@ type TalkRequestResponse struct {
 	VersionLabel     string                 `json:"version_label"`
 	ParentID         *uint                  `json:"parent_id,omitempty"`
 	RoomID           *uint                  `json:"room_id,omitempty"`
+	IsFavorite       bool                   `json:"is_favorite"`
+	IsArchived       bool                   `json:"is_archived"`
+	Tags             []string               `json:"tags"`
 	GeneratedText    string                 `json:"generated_text,omitempty"`
 	ErrorMessage     string                 `json:"error_message,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
@@ -318,10 +321,15 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 
 // ListTalkRequests lists user's dialogue requests structured as a parent-child relationship tree.
 // @Summary List dialogue requests as a tree
-// @Description Returns the dialogue generation requests for the authenticated user, nested in a parent-child tree structure representing branches created by updates.
+// @Description Returns the dialogue generation requests for the authenticated user, nested in a parent-child tree structure representing branches created by updates. Supports filtering by favorite, archived, and tag. Supports limit/offset pagination on root conversations.
 // @Tags Talks
 // @Security BearerAuth
 // @Produce json
+// @Param favorite query bool false "Filter by favorite status (true = only favorites)"
+// @Param archived query bool false "Filter archived talks (true = only archived; omit or false = hide archived)"
+// @Param tag query string false "Filter talks containing this tag (exact match)"
+// @Param limit query int false "Max root conversations to return (default 50, max 200)"
+// @Param offset query int false "Number of root conversations to skip (default 0)"
 // @Success 200 {array} TalkRequestResponse
 // @Failure 401 {object} ErrorResponse
 // @Router /api/v1/talks [get]
@@ -332,27 +340,110 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 		return
 	}
 
+	// Parse filter parameters
+	favoriteStr := c.Query("favorite")
+	archivedStr := c.Query("archived")
+	tagFilter := strings.TrimSpace(c.Query("tag"))
+
+	limit := 50
+	offset := 0
+	if v, err := strconv.Atoi(c.Query("limit")); err == nil && v > 0 {
+		if v > 200 {
+			v = 200
+		}
+		limit = v
+	}
+	if v, err := strconv.Atoi(c.Query("offset")); err == nil && v >= 0 {
+		offset = v
+	}
+
 	// Include talks the user owns directly, plus every talk inside a room
 	// they're a member of (regardless of which member authored each version)
 	// so a shared room tree looks the same to every member.
 	var memberRoomIDs []uint
-	model.DB.Model(&model.RoomMember{}).Where("user_id = ?", userID.(uint)).Pluck("room_id", &memberRoomIDs)
+	model.DB.Model(&model.RoomMember{}).Where("user_id = ? AND status = 'accepted'", userID.(uint)).Pluck("room_id", &memberRoomIDs)
 
-	query := model.DB.Order("created_at asc")
+	// -----------------------------------------------------------------------
+	// Step 1: Resolve the set of qualifying ROOT talk IDs applying filters
+	// (pagination is over root conversations, not individual versions).
+	// -----------------------------------------------------------------------
+	rootQuery := model.DB.Model(&model.TalkRequest{}).Where("parent_id IS NULL")
 	if len(memberRoomIDs) > 0 {
-		query = query.Where("user_id = ? OR room_id IN ?", userID.(uint), memberRoomIDs)
+		rootQuery = rootQuery.Where("user_id = ? OR room_id IN ?", userID.(uint), memberRoomIDs)
 	} else {
-		query = query.Where("user_id = ?", userID.(uint))
+		rootQuery = rootQuery.Where("user_id = ?", userID.(uint))
 	}
 
-	var reqs []model.TalkRequest
-	// Query in chronological order so parent nodes are processed before children
-	if err := query.Find(&reqs).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query talk requests: " + err.Error()})
+	// Favorite filter
+	if favoriteStr == "true" {
+		rootQuery = rootQuery.Where("is_favorite = true")
+	}
+
+	// Archived filter — hide archived by default unless caller explicitly asks
+	if archivedStr == "true" {
+		rootQuery = rootQuery.Where("is_archived = true")
+	} else {
+		// archived=false (explicit) or omitted: exclude archived talks
+		rootQuery = rootQuery.Where("is_archived = false")
+	}
+
+	// Tag filter — EXISTS subquery on talk_tags
+	if tagFilter != "" {
+		rootQuery = rootQuery.Where(
+			"EXISTS (SELECT 1 FROM talk_tags tt WHERE tt.root_talk_id = talk_requests.id AND tt.user_id = ? AND tt.name = ?)",
+			userID.(uint), tagFilter,
+		)
+	}
+
+	var rootIDs []uint
+	if err := rootQuery.Order("id DESC").Limit(limit).Offset(offset).Pluck("id", &rootIDs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query root talk IDs: " + err.Error()})
 		return
 	}
 
-	// Build the parent-child tree structure
+	// -----------------------------------------------------------------------
+	// Step 2: Load ALL versions (full tree) for the qualifying roots.
+	// We use the recursive CTE approach to get every descendant.
+	// -----------------------------------------------------------------------
+	var reqs []model.TalkRequest
+	if len(rootIDs) > 0 {
+		if err := model.DB.
+			Where("id IN (?) OR parent_id IN (SELECT id FROM talk_requests WHERE id IN (?) OR parent_id IN (?))", rootIDs, rootIDs, rootIDs).
+			Order("created_at asc").
+			Find(&reqs).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query talk requests: " + err.Error()})
+			return
+		}
+		// For deep trees: load all descendants via recursive query
+		var allDescendants []model.TalkRequest
+		if err := model.DB.Raw(`
+			WITH RECURSIVE tree AS (
+				SELECT * FROM talk_requests WHERE id = ANY(?) AND deleted_at IS NULL
+				UNION ALL
+				SELECT tr.* FROM talk_requests tr
+				INNER JOIN tree ON tr.parent_id = tree.id
+				WHERE tr.deleted_at IS NULL
+			)
+			SELECT DISTINCT * FROM tree ORDER BY created_at ASC`, rootIDs).Scan(&allDescendants).Error; err == nil && len(allDescendants) > 0 {
+			reqs = allDescendants
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Step 3: Load all talk_tags for these roots in a single query
+	// -----------------------------------------------------------------------
+	tagsByRootID := make(map[uint][]string)
+	if len(rootIDs) > 0 {
+		var tags []model.TalkTag
+		model.DB.Where("root_talk_id IN ? AND user_id = ?", rootIDs, userID.(uint)).Find(&tags)
+		for _, t := range tags {
+			tagsByRootID[t.RootTalkID] = append(tagsByRootID[t.RootTalkID], t.Name)
+		}
+	}
+
+	// -----------------------------------------------------------------------
+	// Step 4: Build the parent-child tree structure (same logic as before)
+	// -----------------------------------------------------------------------
 	nodeMap := make(map[uint]*TalkRequestResponse)
 	var roots []*TalkRequestResponse
 
@@ -383,17 +474,25 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 			VersionLabel:     r.VersionLabel,
 			ParentID:         r.ParentID,
 			RoomID:           r.RoomID,
+			IsFavorite:       r.IsFavorite,
+			IsArchived:       r.IsArchived,
+			Tags:             []string{},
 			GeneratedText:    r.GeneratedText,
 			ErrorMessage:     r.ErrorMessage,
 			CreatedAt:        r.CreatedAt,
 			UpdatedAt:        r.UpdatedAt,
 			Children:         []*TalkRequestResponse{},
 		}
+		// Tags only meaningful on root nodes; fill from bulk-loaded map
+		if r.ParentID == nil {
+			if ts, ok := tagsByRootID[r.ID]; ok {
+				node.Tags = ts
+			}
+		}
 		nodeMap[r.ID] = node
 	}
 
-	// Group active nodes by ultimate root ID to ensure all surviving versions of a talk
-	// remain grouped in ONE conversation family even if the initial version is soft-deleted.
+	// Group active nodes by ultimate root ID
 	familyMap := make(map[uint][]*TalkRequestResponse)
 	for _, node := range nodeMap {
 		rootID := getUltimateRootID(node.ID, allReqsMap)
@@ -607,6 +706,160 @@ func (h *TalkHandler) DeleteTalkRequest(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Talk request deleted successfully"})
+}
+
+// PatchTalkMetaBody represents the optional fields to update for a root conversation's metadata.
+type PatchTalkMetaBody struct {
+	IsFavorite *bool    `json:"is_favorite"`  // nil = no change
+	IsArchived *bool    `json:"is_archived"`  // nil = no change
+	Tags       *[]string `json:"tags"`          // nil = no change; empty slice = clear all tags
+}
+
+// PatchTalkMeta updates the organisational metadata (favorite, archived, tags) of a root conversation.
+// @Summary Update talk metadata (favorite / archived / tags)
+// @Description Sets is_favorite, is_archived, and/or tags on a root TalkRequest. Only root conversations (parent_id IS NULL) are accepted. Tags replace the full tag list for the requesting user.
+// @Tags Talks
+// @Security BearerAuth
+// @Accept json
+// @Produce json
+// @Param id path int true "Root Talk Request ID"
+// @Param request body PatchTalkMetaBody true "Metadata patch payload"
+// @Success 200 {object} TalkRequestResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 401 {object} ErrorResponse
+// @Failure 403 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Router /api/v1/talks/{id}/meta [patch]
+func (h *TalkHandler) PatchTalkMeta(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized context missing"})
+		return
+	}
+
+	idStr := c.Param("id")
+	id, err := strconv.ParseUint(idStr, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Invalid talk request ID"})
+		return
+	}
+
+	var talk model.TalkRequest
+	if err := model.DB.First(&talk, uint(id)).Error; err != nil {
+		c.JSON(http.StatusNotFound, ErrorResponse{Error: "Talk request not found"})
+		return
+	}
+
+	// Only root conversations may carry organisational metadata
+	if talk.ParentID != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Metadata (favorite, archived, tags) can only be set on root conversations (parent_id must be null)"})
+		return
+	}
+
+	if !canAccessTalk(userID.(uint), talk, true) {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "You do not have permission to modify this talk"})
+		return
+	}
+
+	var body PatchTalkMetaBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	// Update is_favorite / is_archived on TalkRequest if provided
+	updates := map[string]interface{}{}
+	if body.IsFavorite != nil {
+		updates["is_favorite"] = *body.IsFavorite
+	}
+	if body.IsArchived != nil {
+		updates["is_archived"] = *body.IsArchived
+	}
+	if len(updates) > 0 {
+		if err := model.DB.Model(&talk).Updates(updates).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update talk metadata: " + err.Error()})
+			return
+		}
+	}
+
+	// Replace tags if provided (replace semantics: delete old, insert new)
+	if body.Tags != nil {
+		// Validate tag names
+		for _, name := range *body.Tags {
+			if strings.TrimSpace(name) == "" {
+				c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Tag names must not be empty or whitespace-only"})
+				return
+			}
+			if len(name) > 100 {
+				c.JSON(http.StatusBadRequest, ErrorResponse{Error: "Tag names must not exceed 100 characters"})
+				return
+			}
+		}
+
+		// Delete existing tags for this user on this talk
+		if err := model.DB.Where("root_talk_id = ? AND user_id = ?", talk.ID, userID.(uint)).Delete(&model.TalkTag{}).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to clear existing tags: " + err.Error()})
+			return
+		}
+
+		// Deduplicate and insert new tags
+		seenTags := make(map[string]bool)
+		var newTags []model.TalkTag
+		for _, name := range *body.Tags {
+			trimmed := strings.TrimSpace(name)
+			if !seenTags[trimmed] {
+				seenTags[trimmed] = true
+				newTags = append(newTags, model.TalkTag{
+					RootTalkID: talk.ID,
+					UserID:     userID.(uint),
+					Name:       trimmed,
+				})
+			}
+		}
+		if len(newTags) > 0 {
+			if err := model.DB.Create(&newTags).Error; err != nil {
+				c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to save new tags: " + err.Error()})
+				return
+			}
+		}
+	}
+
+	// Reload updated talk record
+	model.DB.First(&talk, talk.ID)
+
+	// Load tags to include in response
+	var tagRows []model.TalkTag
+	model.DB.Where("root_talk_id = ? AND user_id = ?", talk.ID, userID.(uint)).Find(&tagRows)
+	tagNames := make([]string, 0, len(tagRows))
+	for _, t := range tagRows {
+		tagNames = append(tagNames, t.Name)
+	}
+
+	// Build response
+	resp := TalkRequestResponse{
+		ID:               talk.ID,
+		UserID:           talk.UserID,
+		Mode:             talk.Mode,
+		Status:           talk.Status,
+		Language:         talk.Language,
+		Place:            talk.Place,
+		Topic:            talk.Topic,
+		Duration:         talk.Duration,
+		SpeechType:       talk.SpeechType,
+		CustomSpeechType: talk.CustomSpeechType,
+		VersionNumber:    talk.VersionNumber,
+		VersionLabel:     talk.VersionLabel,
+		ParentID:         talk.ParentID,
+		RoomID:           talk.RoomID,
+		IsFavorite:       talk.IsFavorite,
+		IsArchived:       talk.IsArchived,
+		Tags:             tagNames,
+		GeneratedText:    talk.GeneratedText,
+		CreatedAt:        talk.CreatedAt,
+		UpdatedAt:        talk.UpdatedAt,
+		Children:         []*TalkRequestResponse{},
+	}
+	c.JSON(http.StatusOK, resp)
 }
 
 func generateVersionLabel(parent model.TalkRequest) string {
