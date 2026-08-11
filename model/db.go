@@ -29,7 +29,14 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 		return nil, fmt.Errorf("failed to run database auto-migrations: %v", err)
 	}
 
+	// Back-fill: ensure any pre-existing room_members rows have status='accepted'
+	// (rows created before the status column was added will have NULL or empty status).
+	if err := db.Exec("UPDATE room_members SET status = 'accepted' WHERE status IS NULL OR status = ''").Error; err != nil {
+		log.Printf("Warning: Failed to back-fill room_member statuses: %v", err)
+	}
+
 	log.Println("Database auto-migrations executed successfully.")
+
 
 	DB = db
 

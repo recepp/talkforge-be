@@ -65,6 +65,8 @@ type TalkRequestResponse struct {
 	ErrorMessage     string                 `json:"error_message,omitempty"`
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
+	UnreadCount      int64                  `json:"unread_count"`
+	HasUnread        bool                   `json:"has_unread"`
 	Children         []*TalkRequestResponse `json:"children"`
 }
 
@@ -461,12 +463,52 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 		}
 	}
 
+	fillTalkUnreadCounts(roots, userID.(uint))
+
 	// If no records, return empty array instead of null
 	if roots == nil {
 		roots = []*TalkRequestResponse{}
 	}
 
 	c.JSON(http.StatusOK, roots)
+}
+
+func fillTalkUnreadCounts(roots []*TalkRequestResponse, userID uint) {
+	roomIDsMap := make(map[uint]bool)
+	for _, r := range roots {
+		if r.RoomID != nil {
+			roomIDsMap[*r.RoomID] = true
+		}
+	}
+	if len(roomIDsMap) == 0 {
+		return
+	}
+
+	var roomIDs []uint
+	for id := range roomIDsMap {
+		roomIDs = append(roomIDs, id)
+	}
+
+	var members []model.RoomMember
+	model.DB.Where("room_id IN ? AND user_id = ? AND status = 'accepted'", roomIDs, userID).Find(&members)
+	memberLastRead := make(map[uint]time.Time)
+	for _, m := range members {
+		memberLastRead[m.RoomID] = m.LastReadAt
+	}
+
+	for _, root := range roots {
+		if root.RoomID == nil {
+			continue
+		}
+		lastRead, exists := memberLastRead[*root.RoomID]
+		if !exists {
+			continue
+		}
+		uMap := getRoomTalkUnreadCounts(*root.RoomID, userID, lastRead)
+		c := uMap[root.ID]
+		root.UnreadCount = c
+		root.HasUnread = c > 0
+	}
 }
 
 func assignVersionLabels(node *TalkRequestResponse, label string) {

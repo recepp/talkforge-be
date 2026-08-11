@@ -159,10 +159,22 @@ func main() {
 			roomsGroup.GET("", roomHandler.ListRooms)
 			roomsGroup.GET("/:id", roomHandler.GetRoom)
 			roomsGroup.POST("/:id/members", roomHandler.InviteMember)
+			roomsGroup.POST("/:id/leave", roomHandler.LeaveRoom)
+			roomsGroup.DELETE("/:id/leave", roomHandler.LeaveRoom)
 		}
-	}
+
+		// Invitation Endpoints (Protected by AuthMiddleware)
+		invitesGroup := api.Group("/invites")
+		invitesGroup.Use(auth.AuthMiddleware(cfg.JWTSecret))
+		{
+			invitesGroup.GET("", roomHandler.ListInvites)
+			invitesGroup.POST("/:id/accept", roomHandler.AcceptInvite)
+			invitesGroup.POST("/:id/decline", roomHandler.DeclineInvite)
+		}
+	} // end api group
 
 	// Start Server
+
 	log.Printf("Starting TalkForge server on port %s", cfg.Port)
 	log.Printf("Swagger documentation is available at http://localhost:%s/swagger/index.html", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
