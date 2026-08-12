@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"talkforge-be/model"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -80,6 +82,20 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 			return
 		}
 
+		// Verify account suspension status if DB is connected
+		if model.DB != nil {
+			var user model.User
+			if err := model.DB.Select("is_suspended, role").First(&user, userID).Error; err == nil {
+				if user.IsSuspended {
+					c.JSON(http.StatusForbidden, gin.H{"error": "Account is suspended. Please contact support."})
+					c.Abort()
+					return
+				}
+				// Keep role synced with DB status
+				role = user.Role
+			}
+		}
+
 		// Save user details to request context
 		c.Set("userID", userID)
 		c.Set("userEmail", email)
@@ -87,6 +103,7 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
 
 // AdminMiddleware blocks requests from non-admin accounts.
 func AdminMiddleware() gin.HandlerFunc {

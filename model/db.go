@@ -23,8 +23,8 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 
 	log.Println("Database connection established successfully using DATABASE_URL.")
 
-	// Run auto-migrations for talkforge_users, talk_requests, talk_tags, talk_types, rooms, room_members, and room_messages
-	err = db.AutoMigrate(&User{}, &TalkRequest{}, &TalkTag{}, &TalkType{}, &Room{}, &RoomMember{}, &RoomMessage{})
+	// Run auto-migrations for talkforge_users, talk_requests, talk_tags, talk_types, rooms, room_members, room_messages, and gemini_call_logs
+	err = db.AutoMigrate(&User{}, &TalkRequest{}, &TalkTag{}, &TalkType{}, &Room{}, &RoomMember{}, &RoomMessage{}, &GeminiCallLog{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to run database auto-migrations: %v", err)
 	}
@@ -39,6 +39,7 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 
 
 	DB = db
+
 
 	// Seed default Talk Types if table is empty
 	err = seedTalkTypes(db)
@@ -251,4 +252,20 @@ func seedTalkTypes(db *gorm.DB) error {
 	log.Println("Default talk types seeded successfully.")
 	return nil
 }
+
+// LogGeminiCall creates an entry in gemini_call_logs table.
+func LogGeminiCall(userID uint, action string, status string) {
+	if DB == nil {
+		return
+	}
+	callLog := GeminiCallLog{
+		UserID: userID,
+		Action: action,
+		Status: status,
+	}
+	if err := DB.Create(&callLog).Error; err != nil {
+		log.Printf("Failed to log Gemini call: %v", err)
+	}
+}
+
 

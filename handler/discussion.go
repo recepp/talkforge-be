@@ -216,11 +216,12 @@ func (h *DiscussionHandler) SummarizeAndUpdate(c *gin.Context) {
 		transcript += fmt.Sprintf("%s: %s\n", name, m.Text)
 	}
 
-	summary, err := h.summarizeDiscussion(c.Request.Context(), transcript)
+	summary, err := h.summarizeDiscussion(c.Request.Context(), userID.(uint), transcript)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to summarize discussion: " + err.Error()})
 		return
 	}
+
 
 	// From here it's the same shape as a regular "update" request — same
 	// version numbering, same worker pipeline. Only the instruction's source differs.
@@ -271,7 +272,7 @@ func (h *DiscussionHandler) SummarizeAndUpdate(c *gin.Context) {
 
 // summarizeDiscussion asks Gemini for a short, actionable rewrite instruction
 // distilled from the discussion transcript.
-func (h *DiscussionHandler) summarizeDiscussion(ctx context.Context, transcript string) (string, error) {
+func (h *DiscussionHandler) summarizeDiscussion(ctx context.Context, userID uint, transcript string) (string, error) {
 	client, err := genai.NewClient(ctx, option.WithAPIKey(h.cfg.GeminiAPIKey))
 	if err != nil {
 		return "", fmt.Errorf("failed to init Gemini client: %v", err)
@@ -292,8 +293,10 @@ func (h *DiscussionHandler) summarizeDiscussion(ctx context.Context, transcript 
 
 	resp, err := geminiModel.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
+		model.LogGeminiCall(userID, "discussion_summary", "failed")
 		return "", fmt.Errorf("gemini API error: %v", err)
 	}
+	model.LogGeminiCall(userID, "discussion_summary", "success")
 
 	var out string
 	if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {
@@ -308,3 +311,4 @@ func (h *DiscussionHandler) summarizeDiscussion(ctx context.Context, transcript 
 	}
 	return out, nil
 }
+

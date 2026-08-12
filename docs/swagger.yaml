@@ -1,5 +1,65 @@
 basePath: /
 definitions:
+  handler.AdminRoomItem:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      member_count:
+        type: integer
+      name:
+        type: string
+      owner_email:
+        type: string
+      owner_id:
+        type: integer
+      owner_nickname:
+        type: string
+      talk_count:
+        type: integer
+    type: object
+  handler.AdminStatsResponse:
+    properties:
+      gemini_calls_month:
+        type: integer
+      gemini_calls_today:
+        type: integer
+      gemini_calls_total:
+        type: integer
+      status_counts:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      total_talks:
+        type: integer
+      total_users:
+        type: integer
+    type: object
+  handler.AdminUserItem:
+    properties:
+      avatar:
+        type: string
+      created_at:
+        type: string
+      email:
+        type: string
+      gemini_call_count:
+        type: integer
+      id:
+        type: integer
+      is_suspended:
+        type: boolean
+      language:
+        type: string
+      nickname:
+        type: string
+      role:
+        type: string
+      talk_count:
+        type: integer
+    type: object
   handler.AuthRequest:
     properties:
       avatar:
@@ -132,6 +192,37 @@ definitions:
     - email
     - role
     type: object
+  handler.InviteResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      invited_by:
+        type: string
+      role:
+        type: string
+      room_id:
+        type: integer
+      room_name:
+        type: string
+      status:
+        type: string
+    type: object
+  handler.PatchTalkMetaBody:
+    properties:
+      is_archived:
+        description: nil = no change
+        type: boolean
+      is_favorite:
+        description: nil = no change
+        type: boolean
+      tags:
+        description: nil = no change; empty slice = clear all tags
+        items:
+          type: string
+        type: array
+    type: object
   handler.PostMessageBody:
     properties:
       text:
@@ -147,6 +238,8 @@ definitions:
       nickname:
         type: string
       role:
+        type: string
+      status:
         type: string
       user_id:
         type: integer
@@ -174,6 +267,8 @@ definitions:
     properties:
       created_at:
         type: string
+      has_unread:
+        type: boolean
       id:
         type: integer
       member_count:
@@ -189,6 +284,13 @@ definitions:
       role:
         type: string
       talk_count:
+        type: integer
+      talk_unread_counts:
+        additionalProperties:
+          format: int64
+          type: integer
+        type: object
+      unread_count:
         type: integer
     type: object
   handler.TalkRequestResponse:
@@ -207,10 +309,16 @@ definitions:
         type: string
       generated_text:
         type: string
+      has_unread:
+        type: boolean
       id:
         type: integer
       instruction:
         type: string
+      is_archived:
+        type: boolean
+      is_favorite:
+        type: boolean
       language:
         type: string
       mode:
@@ -227,8 +335,14 @@ definitions:
         type: string
       status:
         type: string
+      tags:
+        items:
+          type: string
+        type: array
       topic:
         type: string
+      unread_count:
+        type: integer
       updated_at:
         type: string
       user_id:
@@ -274,6 +388,15 @@ definitions:
     required:
     - language
     type: object
+  handler.UpdateUserRequest:
+    properties:
+      is_suspended:
+        example: true
+        type: boolean
+      role:
+        example: admin
+        type: string
+    type: object
   model.Room:
     properties:
       created_at:
@@ -293,6 +416,10 @@ definitions:
         type: string
       id:
         type: integer
+      invited_email:
+        type: string
+      last_read_at:
+        type: string
       role:
         enum:
         - writer
@@ -300,6 +427,12 @@ definitions:
         type: string
       room_id:
         type: integer
+      status:
+        enum:
+        - pending
+        - accepted
+        - declined
+        type: string
       user_id:
         type: integer
     type: object
@@ -334,6 +467,10 @@ definitions:
         type: integer
       instruction:
         type: string
+      is_archived:
+        type: boolean
+      is_favorite:
+        type: boolean
       language:
         type: string
       mode:
@@ -366,6 +503,8 @@ definitions:
         type: string
       user_id:
         type: integer
+      version_label:
+        type: string
       version_number:
         type: integer
     type: object
@@ -381,6 +520,124 @@ info:
   title: TalkForge API
   version: "1.0"
 paths:
+  /api/v1/admin/rooms:
+    get:
+      description: Returns list of all rooms with owner info, active member counts
+        and total room talks.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.AdminRoomItem'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Rooms (Admin)
+      tags:
+      - Admin
+  /api/v1/admin/stats:
+    get:
+      description: Returns metrics such as user counts, talk status breakdown, and
+        daily/monthly Gemini API calls.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AdminStatsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Platform Statistics (Admin)
+      tags:
+      - Admin
+  /api/v1/admin/users:
+    get:
+      description: Returns list of all users with their role, suspension status, total
+        talk requests and Gemini calls.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.AdminUserItem'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List Users (Admin)
+      tags:
+      - Admin
+  /api/v1/admin/users/{id}:
+    patch:
+      consumes:
+      - application/json
+      description: Allows admins to update a user's role ("user" or "admin") or suspend/unsuspend
+        their account.
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Update User Payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.UpdateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.AdminUserItem'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update User (Admin)
+      tags:
+      - Admin
   /api/v1/auth/google:
     post:
       consumes:
@@ -529,9 +786,92 @@ paths:
       summary: User Hello
       tags:
       - Hello
+  /api/v1/invites:
+    get:
+      description: Returns all pending room invitations addressed to the authenticated
+        user.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handler.InviteResponse'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: List my pending invitations
+      tags:
+      - Invites
+  /api/v1/invites/{id}/accept:
+    post:
+      description: Sets the invitation status to "accepted", granting the user access
+        to the room.
+      parameters:
+      - description: Invite (RoomMember) ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.InviteResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Accept a room invitation
+      tags:
+      - Invites
+  /api/v1/invites/{id}/decline:
+    post:
+      description: Sets the invitation status to "declined". The user will not be
+        added to the room.
+      parameters:
+      - description: Invite (RoomMember) ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.InviteResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Decline a room invitation
+      tags:
+      - Invites
   /api/v1/rooms:
     get:
-      description: Returns every room the authenticated user is a member of.
+      description: Returns every room the authenticated user is an accepted member
+        of.
       produces:
       - application/json
       responses:
@@ -584,7 +924,8 @@ paths:
       - Rooms
   /api/v1/rooms/{id}:
     get:
-      description: Returns a room's details and member list. Requires membership.
+      description: Returns a room's details and accepted member list. Requires accepted
+        membership.
       parameters:
       - description: Room ID
         in: path
@@ -611,12 +952,44 @@ paths:
       summary: Get room details
       tags:
       - Rooms
+  /api/v1/rooms/{id}/leave:
+    post:
+      description: Removes the requester from a room. Transfers ownership or deletes
+        room if owner leaves.
+      parameters:
+      - description: Room ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Leave a room
+      tags:
+      - Rooms
   /api/v1/rooms/{id}/members:
     post:
       consumes:
       - application/json
-      description: Adds (or updates the role of) a user in a room by email. Requires
-        the requester to be a writer member.
+      description: Creates a pending invitation for a user by email. Requires the
+        requester to be an accepted writer member.
       parameters:
       - description: Room ID
         in: path
@@ -686,7 +1059,30 @@ paths:
     get:
       description: Returns the dialogue generation requests for the authenticated
         user, nested in a parent-child tree structure representing branches created
-        by updates.
+        by updates. Supports filtering by favorite, archived, and tag. Supports limit/offset
+        pagination on root conversations.
+      parameters:
+      - description: Filter by favorite status (true = only favorites)
+        in: query
+        name: favorite
+        type: boolean
+      - description: Filter archived talks (true = only archived; omit or false =
+          hide archived)
+        in: query
+        name: archived
+        type: boolean
+      - description: Filter talks containing this tag (exact match)
+        in: query
+        name: tag
+        type: string
+      - description: Max root conversations to return (default 50, max 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of root conversations to skip (default 0)
+        in: query
+        name: offset
+        type: integer
       produces:
       - application/json
       responses:
@@ -888,6 +1284,53 @@ paths:
       summary: Summarize discussion into a new version
       tags:
       - Discussion
+  /api/v1/talks/{id}/meta:
+    patch:
+      consumes:
+      - application/json
+      description: Sets is_favorite, is_archived, and/or tags on a root TalkRequest.
+        Only root conversations (parent_id IS NULL) are accepted. Tags replace the
+        full tag list for the requesting user.
+      parameters:
+      - description: Root Talk Request ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Metadata patch payload
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handler.PatchTalkMetaBody'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.TalkRequestResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Update talk metadata (favorite / archived / tags)
+      tags:
+      - Talks
   /api/v1/talks/{id}/translate:
     post:
       consumes:

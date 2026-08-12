@@ -23,6 +23,187 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/admin/rooms": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns list of all rooms with owner info, active member counts and total room talks.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List Rooms (Admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.AdminRoomItem"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/stats": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns metrics such as user counts, talk status breakdown, and daily/monthly Gemini API calls.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Platform Statistics (Admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.AdminStatsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns list of all users with their role, suspension status, total talk requests and Gemini calls.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "List Users (Admin)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.AdminUserItem"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/users/{id}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Allows admins to update a user's role (\"user\" or \"admin\") or suspend/unsuspend their account.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin"
+                ],
+                "summary": "Update User (Admin)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update User Payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.UpdateUserRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.AdminUserItem"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/auth/google": {
             "post": {
                 "description": "Authenticates user via Google OAuth (validates token with Google API if Client ID is configured).",
@@ -252,6 +433,132 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/invites": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns all pending room invitations addressed to the authenticated user.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invites"
+                ],
+                "summary": "List my pending invitations",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handler.InviteResponse"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/invites/{id}/accept": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets the invitation status to \"accepted\", granting the user access to the room.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invites"
+                ],
+                "summary": "Accept a room invitation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Invite (RoomMember) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.InviteResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/invites/{id}/decline": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets the invitation status to \"declined\". The user will not be added to the room.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Invites"
+                ],
+                "summary": "Decline a room invitation",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Invite (RoomMember) ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.InviteResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/rooms": {
             "get": {
                 "security": [
@@ -259,7 +566,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns every room the authenticated user is a member of.",
+                "description": "Returns every room the authenticated user is an accepted member of.",
                 "produces": [
                     "application/json"
                 ],
@@ -342,7 +649,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a room's details and member list. Requires membership.",
+                "description": "Returns a room's details and accepted member list. Requires accepted membership.",
                 "produces": [
                     "application/json"
                 ],
@@ -381,6 +688,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/rooms/{id}/leave": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the requester from a room. Transfers ownership or deletes room if owner leaves.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rooms"
+                ],
+                "summary": "Leave a room",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Room ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/rooms/{id}/members": {
             "post": {
                 "security": [
@@ -388,7 +744,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Adds (or updates the role of) a user in a room by email. Requires the requester to be a writer member.",
+                "description": "Creates a pending invitation for a user by email. Requires the requester to be an accepted writer member.",
                 "consumes": [
                     "application/json"
                 ],
@@ -495,7 +851,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns the dialogue generation requests for the authenticated user, nested in a parent-child tree structure representing branches created by updates.",
+                "description": "Returns the dialogue generation requests for the authenticated user, nested in a parent-child tree structure representing branches created by updates. Supports filtering by favorite, archived, and tag. Supports limit/offset pagination on root conversations.",
                 "produces": [
                     "application/json"
                 ],
@@ -503,6 +859,38 @@ const docTemplate = `{
                     "Talks"
                 ],
                 "summary": "List dialogue requests as a tree",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "Filter by favorite status (true = only favorites)",
+                        "name": "favorite",
+                        "in": "query"
+                    },
+                    {
+                        "type": "boolean",
+                        "description": "Filter archived talks (true = only archived; omit or false = hide archived)",
+                        "name": "archived",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter talks containing this tag (exact match)",
+                        "name": "tag",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Max root conversations to return (default 50, max 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of root conversations to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -801,6 +1189,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/talks/{id}/meta": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Sets is_favorite, is_archived, and/or tags on a root TalkRequest. Only root conversations (parent_id IS NULL) are accepted. Tags replace the full tag list for the requesting user.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Talks"
+                ],
+                "summary": "Update talk metadata (favorite / archived / tags)",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Root Talk Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Metadata patch payload",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handler.PatchTalkMetaBody"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handler.TalkRequestResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/talks/{id}/translate": {
             "post": {
                 "security": [
@@ -925,6 +1383,97 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "handler.AdminRoomItem": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "member_count": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner_email": {
+                    "type": "string"
+                },
+                "owner_id": {
+                    "type": "integer"
+                },
+                "owner_nickname": {
+                    "type": "string"
+                },
+                "talk_count": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.AdminStatsResponse": {
+            "type": "object",
+            "properties": {
+                "gemini_calls_month": {
+                    "type": "integer"
+                },
+                "gemini_calls_today": {
+                    "type": "integer"
+                },
+                "gemini_calls_total": {
+                    "type": "integer"
+                },
+                "status_counts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "total_talks": {
+                    "type": "integer"
+                },
+                "total_users": {
+                    "type": "integer"
+                }
+            }
+        },
+        "handler.AdminUserItem": {
+            "type": "object",
+            "properties": {
+                "avatar": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "gemini_call_count": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "is_suspended": {
+                    "type": "boolean"
+                },
+                "language": {
+                    "type": "string"
+                },
+                "nickname": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "talk_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "handler.AuthRequest": {
             "type": "object",
             "required": [
@@ -1105,6 +1654,52 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.InviteResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "invited_by": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "room_id": {
+                    "type": "integer"
+                },
+                "room_name": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "handler.PatchTalkMetaBody": {
+            "type": "object",
+            "properties": {
+                "is_archived": {
+                    "description": "nil = no change",
+                    "type": "boolean"
+                },
+                "is_favorite": {
+                    "description": "nil = no change",
+                    "type": "boolean"
+                },
+                "tags": {
+                    "description": "nil = no change; empty slice = clear all tags",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "handler.PostMessageBody": {
             "type": "object",
             "required": [
@@ -1127,6 +1722,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 },
                 "user_id": {
@@ -1169,6 +1767,9 @@ const docTemplate = `{
                 "created_at": {
                     "type": "string"
                 },
+                "has_unread": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
                 },
@@ -1191,6 +1792,16 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "talk_count": {
+                    "type": "integer"
+                },
+                "talk_unread_counts": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                },
+                "unread_count": {
                     "type": "integer"
                 }
             }
@@ -1219,11 +1830,20 @@ const docTemplate = `{
                 "generated_text": {
                     "type": "string"
                 },
+                "has_unread": {
+                    "type": "boolean"
+                },
                 "id": {
                     "type": "integer"
                 },
                 "instruction": {
                     "type": "string"
+                },
+                "is_archived": {
+                    "type": "boolean"
+                },
+                "is_favorite": {
+                    "type": "boolean"
                 },
                 "language": {
                     "type": "string"
@@ -1249,8 +1869,17 @@ const docTemplate = `{
                 "status": {
                     "type": "string"
                 },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "topic": {
                     "type": "string"
+                },
+                "unread_count": {
+                    "type": "integer"
                 },
                 "updated_at": {
                     "type": "string"
@@ -1321,6 +1950,19 @@ const docTemplate = `{
                 }
             }
         },
+        "handler.UpdateUserRequest": {
+            "type": "object",
+            "properties": {
+                "is_suspended": {
+                    "type": "boolean",
+                    "example": true
+                },
+                "role": {
+                    "type": "string",
+                    "example": "admin"
+                }
+            }
+        },
         "model.Room": {
             "type": "object",
             "properties": {
@@ -1350,6 +1992,12 @@ const docTemplate = `{
                 "id": {
                     "type": "integer"
                 },
+                "invited_email": {
+                    "type": "string"
+                },
+                "last_read_at": {
+                    "type": "string"
+                },
                 "role": {
                     "type": "string",
                     "enum": [
@@ -1359,6 +2007,14 @@ const docTemplate = `{
                 },
                 "room_id": {
                     "type": "integer"
+                },
+                "status": {
+                    "type": "string",
+                    "enum": [
+                        "pending",
+                        "accepted",
+                        "declined"
+                    ]
                 },
                 "user_id": {
                     "type": "integer"
@@ -1412,6 +2068,12 @@ const docTemplate = `{
                 "instruction": {
                     "type": "string"
                 },
+                "is_archived": {
+                    "type": "boolean"
+                },
+                "is_favorite": {
+                    "type": "boolean"
+                },
                 "language": {
                     "type": "string"
                 },
@@ -1456,6 +2118,9 @@ const docTemplate = `{
                 },
                 "user_id": {
                     "type": "integer"
+                },
+                "version_label": {
+                    "type": "string"
                 },
                 "version_number": {
                     "type": "integer"

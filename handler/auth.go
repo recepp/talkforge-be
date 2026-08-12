@@ -7,6 +7,7 @@ import (
 	"talkforge-be/auth"
 	"talkforge-be/config"
 	"talkforge-be/model"
+
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/api/idtoken"
@@ -27,8 +28,8 @@ type AuthRequest struct {
 	Email    string `json:"email" binding:"required,email" example:"user@example.com"`
 	Password string `json:"password" binding:"required,min=4" example:"secret123"`
 	Nickname string `json:"nickname" example:"my_nickname"` // Required on signup
-	Avatar   string `json:"avatar" example:"👤"`          // Optional on signup
-	Language string `json:"language" example:"tr"`        // Optional on signup
+	Avatar   string `json:"avatar" example:"👤"`             // Optional on signup
+	Language string `json:"language" example:"tr"`          // Optional on signup
 }
 
 // AuthResponse returns authorization payload including a JWT token.
@@ -162,6 +163,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	var user model.User
 	if err := model.DB.Where("email = ?", req.Email).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid email or password"})
+		return
+	}
+
+	if user.IsSuspended {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Account is suspended. Please contact administrator."})
 		return
 	}
 
@@ -306,6 +312,11 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 				return
 			}
 		}
+	}
+
+	if user.IsSuspended {
+		c.JSON(http.StatusForbidden, ErrorResponse{Error: "Account is suspended. Please contact administrator."})
+		return
 	}
 
 	token, err := auth.GenerateToken(user.ID, user.Email, user.Role, h.cfg.JWTSecret)
