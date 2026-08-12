@@ -418,7 +418,7 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 		var allDescendants []model.TalkRequest
 		if err := model.DB.Raw(`
 			WITH RECURSIVE tree AS (
-				SELECT * FROM talk_requests WHERE id = ANY(?) AND deleted_at IS NULL
+				SELECT * FROM talk_requests WHERE id IN (?) AND deleted_at IS NULL
 				UNION ALL
 				SELECT tr.* FROM talk_requests tr
 				INNER JOIN tree ON tr.parent_id = tree.id
@@ -1031,7 +1031,7 @@ func (h *TalkHandler) TranslateTalk(c *gin.Context) {
 		return
 	}
 
-	translated, err := h.translateText(c.Request.Context(), talk.GeneratedText, req.Language, talk.Duration)
+	translated, err := h.translateText(c.Request.Context(), userID.(uint), talk.GeneratedText, req.Language, talk.Duration)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to translate: " + err.Error()})
 		return
@@ -1042,7 +1042,7 @@ func (h *TalkHandler) TranslateTalk(c *gin.Context) {
 
 // translateText asks Gemini to translate a speech into targetLanguage,
 // preserving meaning, tone, and approximate spoken length.
-func (h *TalkHandler) translateText(ctx context.Context, text string, targetLanguage string, durationMinutes int) (string, error) {
+func (h *TalkHandler) translateText(ctx context.Context, userID uint, text string, targetLanguage string, durationMinutes int) (string, error) {
 	client, err := genai.NewClient(ctx, option.WithAPIKey(h.cfg.GeminiAPIKey))
 	if err != nil {
 		return "", fmt.Errorf("failed to init Gemini client: %v", err)
@@ -1068,8 +1068,10 @@ func (h *TalkHandler) translateText(ctx context.Context, text string, targetLang
 
 	resp, err := geminiModel.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
+		model.LogGeminiCall(userID, "translation", "failed")
 		return "", fmt.Errorf("gemini API error: %v", err)
 	}
+	model.LogGeminiCall(userID, "translation", "success")
 
 	var out string
 	if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {
@@ -1084,4 +1086,5 @@ func (h *TalkHandler) translateText(ctx context.Context, text string, targetLang
 	}
 	return out, nil
 }
+
 

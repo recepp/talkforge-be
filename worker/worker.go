@@ -201,8 +201,11 @@ func (w *Worker) executeRequest(ctx context.Context, req *model.TalkRequest) err
 	// Call Gemini API
 	resp, err := geminiModel.GenerateContent(ctx, genai.Text(promptMessage))
 	if err != nil {
+		model.LogGeminiCall(req.UserID, "generation", "failed")
 		return fmt.Errorf("gemini API error: %v", err)
 	}
+	model.LogGeminiCall(req.UserID, "generation", "success")
+
 
 	// Extract response text
 	var responseText string

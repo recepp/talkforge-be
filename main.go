@@ -94,10 +94,23 @@ func main() {
 	roomHandler := handler.NewRoomHandler()
 	discussionHandler := handler.NewDiscussionHandler(cfg)
 
+	adminHandler := handler.NewAdminHandler()
+
 	// API Routing Group
 	api := r.Group("/api/v1")
 	{
+		// Admin Endpoints (Protected by AuthMiddleware & AdminMiddleware)
+		adminGroup := api.Group("/admin")
+		adminGroup.Use(auth.AuthMiddleware(cfg.JWTSecret), auth.AdminMiddleware())
+		{
+			adminGroup.GET("/users", adminHandler.GetUsers)
+			adminGroup.GET("/stats", adminHandler.GetStats)
+			adminGroup.PATCH("/users/:id", adminHandler.UpdateUser)
+			adminGroup.GET("/rooms", adminHandler.GetRooms)
+		}
+
 		// Public Lookup Endpoints
+
 		api.GET("/talk-types", talkTypeHandler.GetTalkTypes)
 
 		// Public Auth Endpoints

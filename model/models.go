@@ -15,6 +15,7 @@ type User struct {
 	PasswordHash string    `gorm:"type:varchar(255)" json:"-"` // Nullable/empty for Google-only users
 	GoogleID     *string   `gorm:"uniqueIndex" json:"google_id,omitempty"`
 	Role         string    `gorm:"type:varchar(20);default:'user';not null" json:"role" enums:"user,admin"`
+	IsSuspended  bool      `gorm:"default:false;not null" json:"is_suspended"`
 	Language     string    `gorm:"type:varchar(10);default:'tr';not null" json:"language"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -152,4 +153,19 @@ type RoomMessage struct {
 func (RoomMessage) TableName() string {
 	return "room_messages"
 }
+
+// GeminiCallLog tracks each call made to the Gemini API for auditing and usage statistics.
+type GeminiCallLog struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	UserID    uint      `gorm:"index" json:"user_id"`
+	Action    string    `gorm:"type:varchar(50);not null" json:"action"` // "generation", "translation", "discussion_summary"
+	Status    string    `gorm:"type:varchar(20);not null" json:"status"` // "success", "failed"
+	CreatedAt time.Time `gorm:"index" json:"created_at"`
+}
+
+// TableName overrides the default table name for the GeminiCallLog model to gemini_call_logs.
+func (GeminiCallLog) TableName() string {
+	return "gemini_call_logs"
+}
+
 
