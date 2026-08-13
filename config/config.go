@@ -10,15 +10,31 @@ import (
 
 // Config holds the application configuration parameters.
 type Config struct {
-	Port                   string
-	GinMode                string
-	DatabaseURL            string
-	JWTSecret              string
-	GoogleClientID         string
-	AdminBootstrapName     string
-	AdminBootstrapPassword string
-	GeminiAPIKey           string
+	Port                     string
+	GinMode                  string
+	DatabaseURL              string
+	JWTSecret                string
+	GoogleClientID           string
+	AdminBootstrapName       string
+	AdminBootstrapPassword   string
+	GeminiAPIKey             string
 	QueuePollIntervalSeconds int
+
+	// Gemini Quota & Limit Configuration
+	GeminiDailyCreateLimit int
+	GeminiDailyEditLimit   int
+	GeminiDailyTokenLimit  int
+	MaxRoomMembershipLimit int
+}
+
+func getEnvInt(key string, defaultVal int) int {
+	valStr := os.Getenv(key)
+	if valStr != "" {
+		if val, err := strconv.Atoi(valStr); err == nil && val > 0 {
+			return val
+		}
+	}
+	return defaultVal
 }
 
 // LoadConfig reads configuration parameters from the environment and optional .env file.
@@ -70,15 +86,25 @@ func LoadConfig() *Config {
 		}
 	}
 
+	dailyCreateLimit := getEnvInt("GEMINI_DAILY_CREATE_LIMIT", 5)
+	dailyEditLimit := getEnvInt("GEMINI_DAILY_EDIT_LIMIT", 20)
+	dailyTokenLimit := getEnvInt("GEMINI_DAILY_TOKEN_LIMIT", 30000)
+	maxRoomsLimit := getEnvInt("MAX_ROOM_MEMBERSHIP_LIMIT", 1)
+
 	return &Config{
-		Port:                   port,
-		GinMode:                ginMode,
-		DatabaseURL:            databaseURL,
-		JWTSecret:              jwtSecret,
-		GoogleClientID:         googleClientID,
-		AdminBootstrapName:     adminName,
-		AdminBootstrapPassword: adminPassword,
-		GeminiAPIKey:           geminiAPIKey,
+		Port:                     port,
+		GinMode:                  ginMode,
+		DatabaseURL:              databaseURL,
+		JWTSecret:                jwtSecret,
+		GoogleClientID:           googleClientID,
+		AdminBootstrapName:       adminName,
+		AdminBootstrapPassword:   adminPassword,
+		GeminiAPIKey:             geminiAPIKey,
 		QueuePollIntervalSeconds: pollSecs,
+
+		GeminiDailyCreateLimit: dailyCreateLimit,
+		GeminiDailyEditLimit:   dailyEditLimit,
+		GeminiDailyTokenLimit:  dailyTokenLimit,
+		MaxRoomMembershipLimit: maxRoomsLimit,
 	}
 }

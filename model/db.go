@@ -254,14 +254,17 @@ func seedTalkTypes(db *gorm.DB) error {
 }
 
 // LogGeminiCall creates an entry in gemini_call_logs table.
-func LogGeminiCall(userID uint, action string, status string) {
+func LogGeminiCall(userID uint, action string, status string, promptTokens, completionTokens, totalTokens int) {
 	if DB == nil {
 		return
 	}
 	callLog := GeminiCallLog{
-		UserID: userID,
-		Action: action,
-		Status: status,
+		UserID:           userID,
+		Action:           action,
+		Status:           status,
+		PromptTokens:     promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      totalTokens,
 	}
 	if err := DB.Create(&callLog).Error; err != nil {
 		log.Printf("Failed to log Gemini call: %v", err)

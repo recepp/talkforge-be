@@ -201,11 +201,18 @@ func (w *Worker) executeRequest(ctx context.Context, req *model.TalkRequest) err
 	// Call Gemini API
 	resp, err := geminiModel.GenerateContent(ctx, genai.Text(promptMessage))
 	if err != nil {
-		model.LogGeminiCall(req.UserID, "generation", "failed")
+		model.LogGeminiCall(req.UserID, "generation", "failed", 0, 0, 0)
 		return fmt.Errorf("gemini API error: %v", err)
 	}
-	model.LogGeminiCall(req.UserID, "generation", "success")
 
+	var promptTokens, completionTokens, totalTokens int
+	if resp.UsageMetadata != nil {
+		promptTokens = int(resp.UsageMetadata.PromptTokenCount)
+		completionTokens = int(resp.UsageMetadata.CandidatesTokenCount)
+		totalTokens = int(resp.UsageMetadata.TotalTokenCount)
+	}
+
+	model.LogGeminiCall(req.UserID, "generation", "success", promptTokens, completionTokens, totalTokens)
 
 	// Extract response text
 	var responseText string
@@ -223,6 +230,9 @@ func (w *Worker) executeRequest(ctx context.Context, req *model.TalkRequest) err
 
 	// Save results
 	req.GeneratedText = responseText
+	req.PromptTokens = promptTokens
+	req.CompletionTokens = completionTokens
+	req.TotalTokens = totalTokens
 	req.Status = "completed"
 	req.UpdatedAt = time.Now()
 

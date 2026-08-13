@@ -14,11 +14,13 @@ type User struct {
 	Avatar       string    `gorm:"type:varchar(512);default:'👤'" json:"avatar"`
 	PasswordHash string    `gorm:"type:varchar(255)" json:"-"` // Nullable/empty for Google-only users
 	GoogleID     *string   `gorm:"uniqueIndex" json:"google_id,omitempty"`
-	Role         string    `gorm:"type:varchar(20);default:'user';not null" json:"role" enums:"user,admin"`
-	IsSuspended  bool      `gorm:"default:false;not null" json:"is_suspended"`
-	Language     string    `gorm:"type:varchar(10);default:'tr';not null" json:"language"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	Role             string     `gorm:"type:varchar(20);default:'user';not null" json:"role" enums:"user,admin"`
+	SubscriptionTier string     `gorm:"type:varchar(20);default:'free';not null" json:"subscription_tier" enums:"free,pro,enterprise"`
+	SubscriptionEndsAt *time.Time `gorm:"type:timestamp" json:"subscription_ends_at,omitempty"`
+	IsSuspended      bool       `gorm:"default:false;not null" json:"is_suspended"`
+	Language         string     `gorm:"type:varchar(10);default:'tr';not null" json:"language"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 }
 
 // TableName overrides the default table name for the User model to talkforge_users.
@@ -49,6 +51,9 @@ type TalkRequest struct {
 	IsArchived       bool           `gorm:"default:false;not null" json:"is_archived"`
 	GeneratedText    string         `gorm:"type:text" json:"generated_text,omitempty"`
 	ErrorMessage     string         `gorm:"type:text" json:"error_message,omitempty"`
+	PromptTokens     int            `gorm:"default:0;not null" json:"prompt_tokens"`
+	CompletionTokens int            `gorm:"default:0;not null" json:"completion_tokens"`
+	TotalTokens      int            `gorm:"default:0;not null" json:"total_tokens"`
 	CreatedAt        time.Time      `json:"created_at"`
 	UpdatedAt        time.Time      `json:"updated_at"`
 	DeletedAt        gorm.DeletedAt `gorm:"index" json:"-"`
@@ -156,16 +161,73 @@ func (RoomMessage) TableName() string {
 
 // GeminiCallLog tracks each call made to the Gemini API for auditing and usage statistics.
 type GeminiCallLog struct {
-	ID        uint      `gorm:"primaryKey" json:"id"`
-	UserID    uint      `gorm:"index" json:"user_id"`
-	Action    string    `gorm:"type:varchar(50);not null" json:"action"` // "generation", "translation", "discussion_summary"
-	Status    string    `gorm:"type:varchar(20);not null" json:"status"` // "success", "failed"
-	CreatedAt time.Time `gorm:"index" json:"created_at"`
+	ID               uint      `gorm:"primaryKey" json:"id"`
+	UserID           uint      `gorm:"index" json:"user_id"`
+	Action           string    `gorm:"type:varchar(50);not null" json:"action"` // "generation", "translation", "discussion_summary"
+	Status           string    `gorm:"type:varchar(20);not null" json:"status"` // "success", "failed"
+	PromptTokens     int       `gorm:"default:0;not null" json:"prompt_tokens"`
+	CompletionTokens int       `gorm:"default:0;not null" json:"completion_tokens"`
+	TotalTokens      int       `gorm:"default:0;not null" json:"total_tokens"`
+	CreatedAt        time.Time `gorm:"index" json:"created_at"`
 }
 
 // TableName overrides the default table name for the GeminiCallLog model to gemini_call_logs.
 func (GeminiCallLog) TableName() string {
 	return "gemini_call_logs"
 }
+
+// UserUsageStats represents the response structure for GET /user/usage
+type UserUsageStats struct {
+	DailyRequestsUsed      int64 `json:"daily_requests_used,omitempty"`
+	DailyRequestsLimit     int   `json:"daily_requests_limit,omitempty"`
+	DailyRequestsRemaining int64 `json:"daily_requests_remaining,omitempty"`
+
+	DailyCreatesUsed      int64 `json:"daily_creates_used"`
+	DailyCreatesLimit     int   `json:"daily_creates_limit"`
+	DailyCreatesRemaining int64 `json:"daily_creates_remaining"`
+
+	DailyEditsUsed      int64 `json:"daily_edits_used"`
+	DailyEditsLimit     int   `json:"daily_edits_limit"`
+	DailyEditsRemaining int64 `json:"daily_edits_remaining"`
+
+	DailyTokensUsed      int64 `json:"daily_tokens_used"`
+	DailyTokensLimit     int   `json:"daily_tokens_limit"`
+	DailyTokensRemaining int64 `json:"daily_tokens_remaining"`
+
+	TotalTokensUsed    int64 `json:"total_tokens_used"`
+	TotalRequestsCount int64 `json:"total_requests_count"`
+
+	RoomsUsed      int64 `json:"rooms_used"`
+	RoomsLimit     int   `json:"rooms_limit"`
+	RoomsRemaining int64 `json:"rooms_remaining"`
+
+	SubscriptionTier   string     `json:"subscription_tier"`
+	SubscriptionEndsAt *time.Time `json:"subscription_ends_at,omitempty"`
+}
+
+// SubscriptionPlan represents a tier package available for users to view or purchase.
+type SubscriptionPlan struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Price       string   `json:"price"`
+	Period      string   `json:"period"`
+	Badge       string   `json:"badge,omitempty"`
+	Description string   `json:"description"`
+	Features    []string `json:"features"`
+	IsPopular   bool     `json:"is_popular"`
+	ButtonText  string   `json:"button_text"`
+	Tier        string   `json:"tier"`
+}
+
+// UserSubscriptionInfo represents current subscription status of a user.
+type UserSubscriptionInfo struct {
+	UserID             uint       `json:"user_id"`
+	SubscriptionTier   string     `json:"subscription_tier"`
+	SubscriptionEndsAt *time.Time `json:"subscription_ends_at,omitempty"`
+	IsActive           bool       `json:"is_active"`
+	PlanName           string     `json:"plan_name"`
+}
+
+
 
 

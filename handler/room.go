@@ -2,21 +2,27 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
+	"talkforge-be/auth"
+	"talkforge-be/config"
 	"talkforge-be/model"
+
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
 // RoomHandler handles shared-room (multi-user workspace) endpoints.
-type RoomHandler struct{}
+type RoomHandler struct {
+	cfg *config.Config
+}
 
 // NewRoomHandler instantiates a new RoomHandler.
-func NewRoomHandler() *RoomHandler {
-	return &RoomHandler{}
+func NewRoomHandler(cfg *config.Config) *RoomHandler {
+	return &RoomHandler{cfg: cfg}
 }
 
 // CreateRoomBody represents the payload to create a new room.
@@ -117,6 +123,20 @@ func (h *RoomHandler) CreateRoom(c *gin.Context) {
 	var req CreateRoomBody
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: err.Error()})
+		return
+	}
+
+	var roomsUsed int64
+	model.DB.Model(&model.RoomMember{}).Where("user_id = ? AND status = 'accepted'", userID.(uint)).Count(&roomsUsed)
+
+	stats, err := auth.GetUserUsageStats(h.cfg, userID.(uint))
+	limit := int64(1)
+	if err == nil {
+		limit = int64(stats.RoomsLimit)
+	}
+
+	if roomsUsed >= limit {
+		c.JSON(http.StatusBadRequest, ErrorResponse{Error: fmt.Sprintf("En fazla %d odada yer alabilirsiniz. Oda limitinize ulaştınız.", limit)})
 		return
 	}
 
@@ -553,6 +573,22 @@ func (h *RoomHandler) respondInvite(c *gin.Context, newStatus string) {
 	if m.Status != "pending" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "invite is no longer pending"})
 		return
+	}
+
+	if newStatus == "accepted" {
+		var roomsUsed int64
+		model.DB.Model(&model.RoomMember{}).Where("user_id = ? AND status = 'accepted'", userID.(uint)).Count(&roomsUsed)
+
+		stats, err := auth.GetUserUsageStats(h.cfg, userID.(uint))
+		limit := int64(1)
+		if err == nil {
+			limit = int64(stats.RoomsLimit)
+		}
+
+		if roomsUsed >= limit {
+			c.JSON(http.StatusBadRequest, ErrorResponse{Error: fmt.Sprintf("En fazla %d odada yer alabilirsiniz. Oda limitinize ulaştınız.", limit)})
+			return
+		}
 	}
 
 	m.Status = newStatus

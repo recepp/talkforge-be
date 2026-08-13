@@ -91,10 +91,11 @@ func main() {
 	helloHandler := handler.NewHelloHandler()
 	talkHandler := handler.NewTalkHandler(cfg)
 	talkTypeHandler := handler.NewTalkTypeHandler()
-	roomHandler := handler.NewRoomHandler()
+	roomHandler := handler.NewRoomHandler(cfg)
 	discussionHandler := handler.NewDiscussionHandler(cfg)
 
-	adminHandler := handler.NewAdminHandler()
+	adminHandler := handler.NewAdminHandler(cfg)
+	subscriptionHandler := handler.NewSubscriptionHandler(cfg)
 
 	// API Routing Group
 	api := r.Group("/api/v1")
@@ -112,6 +113,7 @@ func main() {
 		// Public Lookup Endpoints
 
 		api.GET("/talk-types", talkTypeHandler.GetTalkTypes)
+		api.GET("/plans", subscriptionHandler.GetPlans)
 
 		// Public Auth Endpoints
 		authGroup := api.Group("/auth")
@@ -163,6 +165,9 @@ func main() {
 		userGroup.Use(auth.AuthMiddleware(cfg.JWTSecret))
 		{
 			userGroup.PUT("/language", authHandler.UpdateLanguage)
+			userGroup.GET("/usage", authHandler.GetUserUsage)
+			userGroup.GET("/subscription", subscriptionHandler.GetUserSubscription)
+			userGroup.POST("/subscription", subscriptionHandler.Subscribe)
 		}
 
 		// Shared Room Endpoints (Protected by AuthMiddleware)
