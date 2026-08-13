@@ -164,6 +164,7 @@ func main() {
 		userGroup := api.Group("/user")
 		userGroup.Use(auth.AuthMiddleware(cfg.JWTSecret))
 		{
+			userGroup.PUT("/profile", authHandler.UpdateProfile)
 			userGroup.PUT("/language", authHandler.UpdateLanguage)
 			userGroup.GET("/usage", authHandler.GetUserUsage)
 			userGroup.GET("/subscription", subscriptionHandler.GetUserSubscription)
