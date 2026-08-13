@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"talkforge-be/config"
+
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -37,9 +38,10 @@ func InitDB(cfg *config.Config) (*gorm.DB, error) {
 
 	log.Println("Database auto-migrations executed successfully.")
 
+	// Back-fill & repair any corrupted JWT accounts in the database
+	HealCorruptedUsers(db)
 
 	DB = db
-
 
 	// Seed default Talk Types if table is empty
 	err = seedTalkTypes(db)
@@ -270,5 +272,3 @@ func LogGeminiCall(userID uint, action string, status string, promptTokens, comp
 		log.Printf("Failed to log Gemini call: %v", err)
 	}
 }
-
-
