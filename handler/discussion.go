@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"talkforge-be/auth"
 	"talkforge-be/config"
 	"talkforge-be/model"
 
@@ -191,6 +192,14 @@ func (h *DiscussionHandler) SummarizeAndUpdate(c *gin.Context) {
 		return
 	}
 
+	if ok, errMsg, err := auth.CheckQuota(h.cfg, userID.(uint)); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	} else if !ok {
+		c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: errMsg})
+		return
+	}
+
 	var messages []model.RoomMessage
 	if err := model.DB.Where("talk_request_id = ?", talk.ID).Order("created_at asc").Find(&messages).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query messages: " + err.Error()})
@@ -293,10 +302,17 @@ func (h *DiscussionHandler) summarizeDiscussion(ctx context.Context, userID uint
 
 	resp, err := geminiModel.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
-		model.LogGeminiCall(userID, "discussion_summary", "failed")
+		model.LogGeminiCall(userID, "discussion_summary", "failed", 0, 0, 0)
 		return "", fmt.Errorf("gemini API error: %v", err)
 	}
-	model.LogGeminiCall(userID, "discussion_summary", "success")
+
+	var promptTokens, completionTokens, totalTokens int
+	if resp.UsageMetadata != nil {
+		promptTokens = int(resp.UsageMetadata.PromptTokenCount)
+		completionTokens = int(resp.UsageMetadata.CandidatesTokenCount)
+		totalTokens = int(resp.UsageMetadata.TotalTokenCount)
+	}
+	model.LogGeminiCall(userID, "discussion_summary", "success", promptTokens, completionTokens, totalTokens)
 
 	var out string
 	if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {

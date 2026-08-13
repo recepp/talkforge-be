@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"talkforge-be/auth"
 	"talkforge-be/config"
 	"talkforge-be/model"
 
@@ -66,6 +67,9 @@ type TalkRequestResponse struct {
 	Tags             []string               `json:"tags"`
 	GeneratedText    string                 `json:"generated_text,omitempty"`
 	ErrorMessage     string                 `json:"error_message,omitempty"`
+	PromptTokens     int                    `json:"prompt_tokens"`
+	CompletionTokens int                    `json:"completion_tokens"`
+	TotalTokens      int                    `json:"total_tokens"`
 	CreatedAt        time.Time              `json:"created_at"`
 	UpdatedAt        time.Time              `json:"updated_at"`
 	UnreadCount      int64                  `json:"unread_count"`
@@ -102,6 +106,16 @@ func (h *TalkHandler) CreateTalkRequest(c *gin.Context) {
 	if req.Mode != "new" && req.Mode != "update" && req.Mode != "partial_update" && req.Mode != "manual_update" {
 		c.JSON(http.StatusBadRequest, ErrorResponse{Error: "mode must be 'new', 'update', 'partial_update', or 'manual_update'"})
 		return
+	}
+
+	if req.Mode != "manual_update" {
+		if ok, errMsg, err := auth.CheckQuota(h.cfg, userID.(uint), req.Mode); err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+			return
+		} else if !ok {
+			c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: errMsg})
+			return
+		}
 	}
 
 	var talkReq model.TalkRequest
@@ -479,6 +493,9 @@ func (h *TalkHandler) ListTalkRequests(c *gin.Context) {
 			Tags:             []string{},
 			GeneratedText:    r.GeneratedText,
 			ErrorMessage:     r.ErrorMessage,
+			PromptTokens:     r.PromptTokens,
+			CompletionTokens: r.CompletionTokens,
+			TotalTokens:      r.TotalTokens,
 			CreatedAt:        r.CreatedAt,
 			UpdatedAt:        r.UpdatedAt,
 			Children:         []*TalkRequestResponse{},
@@ -855,6 +872,9 @@ func (h *TalkHandler) PatchTalkMeta(c *gin.Context) {
 		IsArchived:       talk.IsArchived,
 		Tags:             tagNames,
 		GeneratedText:    talk.GeneratedText,
+		PromptTokens:     talk.PromptTokens,
+		CompletionTokens: talk.CompletionTokens,
+		TotalTokens:      talk.TotalTokens,
 		CreatedAt:        talk.CreatedAt,
 		UpdatedAt:        talk.UpdatedAt,
 		Children:         []*TalkRequestResponse{},
@@ -1026,6 +1046,14 @@ func (h *TalkHandler) TranslateTalk(c *gin.Context) {
 		return
 	}
 
+	if ok, errMsg, err := auth.CheckQuota(h.cfg, userID.(uint)); err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: err.Error()})
+		return
+	} else if !ok {
+		c.JSON(http.StatusTooManyRequests, ErrorResponse{Error: errMsg})
+		return
+	}
+
 	if h.cfg.GeminiAPIKey == "" {
 		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "GEMINI_API_KEY is not configured"})
 		return
@@ -1068,10 +1096,17 @@ func (h *TalkHandler) translateText(ctx context.Context, userID uint, text strin
 
 	resp, err := geminiModel.GenerateContent(ctx, genai.Text(prompt))
 	if err != nil {
-		model.LogGeminiCall(userID, "translation", "failed")
+		model.LogGeminiCall(userID, "translation", "failed", 0, 0, 0)
 		return "", fmt.Errorf("gemini API error: %v", err)
 	}
-	model.LogGeminiCall(userID, "translation", "success")
+
+	var promptTokens, completionTokens, totalTokens int
+	if resp.UsageMetadata != nil {
+		promptTokens = int(resp.UsageMetadata.PromptTokenCount)
+		completionTokens = int(resp.UsageMetadata.CandidatesTokenCount)
+		totalTokens = int(resp.UsageMetadata.TotalTokenCount)
+	}
+	model.LogGeminiCall(userID, "translation", "success", promptTokens, completionTokens, totalTokens)
 
 	var out string
 	if len(resp.Candidates) > 0 && resp.Candidates[0].Content != nil {

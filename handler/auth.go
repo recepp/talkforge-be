@@ -38,10 +38,11 @@ type AuthResponse struct {
 	Email     string `json:"email" example:"user@example.com"`
 	Nickname  string `json:"nickname" example:"my_nickname"`
 	Avatar    string `json:"avatar" example:"👤"`
-	Role      string `json:"role" example:"user"`
-	Language  string `json:"language" example:"tr"`
-	UserID    uint   `json:"user_id" example:"1"`
-	CreatedAt string `json:"created_at"`
+	Role             string `json:"role" example:"user"`
+	SubscriptionTier string `json:"subscription_tier" example:"free"`
+	Language         string `json:"language" example:"tr"`
+	UserID           uint   `json:"user_id" example:"1"`
+	CreatedAt        string `json:"created_at"`
 }
 
 // GoogleAuthRequest represents Google OAuth parameters.
@@ -130,15 +131,20 @@ func (h *AuthHandler) Signup(c *gin.Context) {
 		return
 	}
 
+	tier := newUser.SubscriptionTier
+	if tier == "" {
+		tier = "free"
+	}
 	c.JSON(http.StatusCreated, AuthResponse{
-		Token:     token,
-		Email:     newUser.Email,
-		Nickname:  newUser.Nickname,
-		Avatar:    newUser.Avatar,
-		Role:      newUser.Role,
-		Language:  newUser.Language,
-		UserID:    newUser.ID,
-		CreatedAt: newUser.CreatedAt.Format(time.RFC3339),
+		Token:            token,
+		Email:            newUser.Email,
+		Nickname:         newUser.Nickname,
+		Avatar:           newUser.Avatar,
+		Role:             newUser.Role,
+		SubscriptionTier: tier,
+		Language:         newUser.Language,
+		UserID:           newUser.ID,
+		CreatedAt:        newUser.CreatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -189,15 +195,20 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	tier := user.SubscriptionTier
+	if tier == "" {
+		tier = "free"
+	}
 	c.JSON(http.StatusOK, AuthResponse{
-		Token:     token,
-		Email:     user.Email,
-		Nickname:  user.Nickname,
-		Avatar:    user.Avatar,
-		Role:      user.Role,
-		Language:  user.Language,
-		UserID:    user.ID,
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+		Token:            token,
+		Email:            user.Email,
+		Nickname:         user.Nickname,
+		Avatar:           user.Avatar,
+		Role:             user.Role,
+		SubscriptionTier: tier,
+		Language:         user.Language,
+		UserID:           user.ID,
+		CreatedAt:        user.CreatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -325,15 +336,20 @@ func (h *AuthHandler) GoogleLogin(c *gin.Context) {
 		return
 	}
 
+	tier := user.SubscriptionTier
+	if tier == "" {
+		tier = "free"
+	}
 	c.JSON(http.StatusOK, AuthResponse{
-		Token:     token,
-		Email:     user.Email,
-		Nickname:  user.Nickname,
-		Avatar:    user.Avatar,
-		Role:      user.Role,
-		Language:  user.Language,
-		UserID:    user.ID,
-		CreatedAt: user.CreatedAt.Format(time.RFC3339),
+		Token:            token,
+		Email:            user.Email,
+		Nickname:         user.Nickname,
+		Avatar:           user.Avatar,
+		Role:             user.Role,
+		SubscriptionTier: tier,
+		Language:         user.Language,
+		UserID:           user.ID,
+		CreatedAt:        user.CreatedAt.Format(time.RFC3339),
 	})
 }
 
@@ -391,3 +407,36 @@ func (h *AuthHandler) UpdateLanguage(c *gin.Context) {
 		"language": user.Language,
 	})
 }
+
+// GetUserUsage returns the authenticated user's current Gemini usage and quota limits.
+// @Summary Get user Gemini quota and usage stats
+// @Description Returns the daily/monthly usage, remaining limits, and token metrics for the authenticated user.
+// @Tags User
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} model.UserUsageStats
+// @Failure 401 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /api/v1/user/usage [get]
+func (h *AuthHandler) GetUserUsage(c *gin.Context) {
+	userIDVal, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDVal.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid user session"})
+		return
+	}
+
+	stats, err := auth.GetUserUsageStats(h.cfg, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to query usage stats: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, stats)
+}
+
