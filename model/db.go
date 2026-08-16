@@ -70,6 +70,9 @@ func bootstrapAdmin(db *gorm.DB, cfg *config.Config) error {
 		return err
 	}
 
+	// Ensure any existing admin user without a tier set gets enterprise package
+	db.Model(&User{}).Where("role = ? AND (subscription_tier IS NULL OR subscription_tier = '')", "admin").Update("subscription_tier", "enterprise")
+
 	if count == 0 {
 		hashed, err := bcrypt.GenerateFromPassword([]byte(cfg.AdminBootstrapPassword), bcrypt.DefaultCost)
 		if err != nil {
@@ -77,11 +80,12 @@ func bootstrapAdmin(db *gorm.DB, cfg *config.Config) error {
 		}
 
 		adminUser := User{
-			Email:        adminEmail,
-			Nickname:     "admin",
-			PasswordHash: string(hashed),
-			Role:         "admin",
-			Avatar:       "👑",
+			Email:            adminEmail,
+			Nickname:         "admin",
+			PasswordHash:     string(hashed),
+			Role:             "admin",
+			SubscriptionTier: "enterprise",
+			Avatar:           "👑",
 		}
 
 		err = db.Create(&adminUser).Error
