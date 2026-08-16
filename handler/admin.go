@@ -282,12 +282,15 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 			return
 		}
 		updates["role"] = *req.Role
-		user.Role = *req.Role
+		if *req.Role == "admin" && req.SubscriptionTier == nil {
+			updates["subscription_tier"] = "enterprise"
+		} else if *req.Role == "user" && req.SubscriptionTier == nil {
+			updates["subscription_tier"] = "free"
+		}
 	}
 
 	if req.IsSuspended != nil {
 		updates["is_suspended"] = *req.IsSuspended
-		user.IsSuspended = *req.IsSuspended
 	}
 
 	if req.SubscriptionTier != nil {
@@ -297,12 +300,15 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 			return
 		}
 		updates["subscription_tier"] = t
-		user.SubscriptionTier = t
 	}
 
 	if len(updates) > 0 {
-		if err := model.DB.Model(&user).Updates(updates).Error; err != nil {
+		if err := model.DB.Model(&model.User{}).Where("id = ?", targetID).Updates(updates).Error; err != nil {
 			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to update user"})
+			return
+		}
+		if err := model.DB.First(&user, targetID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, ErrorResponse{Error: "Failed to reload updated user"})
 			return
 		}
 	}
@@ -313,17 +319,27 @@ func (h *AdminHandler) UpdateUser(c *gin.Context) {
 	var geminiCount int64
 	model.DB.Model(&model.GeminiCallLog{}).Where("user_id = ?", user.ID).Count(&geminiCount)
 
+	var geminiTokens int64
+	model.DB.Model(&model.GeminiCallLog{}).Where("user_id = ?", user.ID).Select("COALESCE(SUM(total_tokens), 0)").Scan(&geminiTokens)
+
+	tier := user.SubscriptionTier
+	if tier == "" {
+		tier = "free"
+	}
+
 	c.JSON(http.StatusOK, AdminUserItem{
-		ID:              user.ID,
-		Email:           user.Email,
-		Nickname:        user.Nickname,
-		Avatar:          user.Avatar,
-		Role:            user.Role,
-		Language:        user.Language,
-		IsSuspended:     user.IsSuspended,
-		CreatedAt:       user.CreatedAt,
-		TalkCount:       talkCount,
-		GeminiCallCount: geminiCount,
+		ID:               user.ID,
+		Email:            user.Email,
+		Nickname:         user.Nickname,
+		Avatar:           user.Avatar,
+		Role:             user.Role,
+		SubscriptionTier: tier,
+		Language:         user.Language,
+		IsSuspended:      user.IsSuspended,
+		CreatedAt:        user.CreatedAt,
+		TalkCount:        talkCount,
+		GeminiCallCount:  geminiCount,
+		GeminiTokenCount: geminiTokens,
 	})
 }
 

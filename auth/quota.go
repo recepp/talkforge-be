@@ -22,11 +22,11 @@ func GetUserUsageStats(cfg *config.Config, userID uint) (*model.UserUsageStats, 
 	var totalTokens int64
 	var totalReqs int64
 
-	// Apply quota multiplier based on subscription tier or admin role (free=1x, pro=3x, enterprise=10x, admin=10x)
+	// Apply quota multiplier based on subscription tier (free=1x, pro=3x, enterprise=10x)
 	multiplier := 1
 	var user model.User
-	if err := model.DB.Select("role, subscription_tier").First(&user, userID).Error; err == nil {
-		if user.Role == "admin" || user.SubscriptionTier == "enterprise" {
+	if err := model.DB.Select("subscription_tier").First(&user, userID).Error; err == nil {
+		if user.SubscriptionTier == "enterprise" {
 			multiplier = 10
 		} else if user.SubscriptionTier == "pro" {
 			multiplier = 3
